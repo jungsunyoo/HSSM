@@ -733,7 +733,7 @@ def make_rldm_logp_op(n_participants: int, n_trials_per_sub: list, n_params: int
         A function that computes the log likelihood for the RLDM model.
     """
     # logp = make_logp_func(n_participants, n_trials)
-    logp = make_logp_func(n_participants, n_trials_per_sub=jnp.array(n_trials_per_sub))
+    logp = make_logp_func(n_participants, jnp.array(n_trials_per_sub))
     vjp_logp = make_vjp_func(logp, params_only=False, n_params=n_params)
 
     return make_jax_logp_ops(
