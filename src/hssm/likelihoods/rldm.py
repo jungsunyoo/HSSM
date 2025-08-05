@@ -578,74 +578,15 @@ def vec_logp(*args):
     return output
 
 
-# def make_logp_func(n_participants: int, n_trials: int) -> Callable:
-#     """Create a log likelihood function for the RLDM model.
-
-#     Parameters
-#     ----------
-#     n_participants : int
-#         The number of participants in the dataset.
-#     n_trials : int
-#         The number of trials per participant.
-
-#     Returns
-#     -------
-#     callable
-#         A function that computes the log likelihood for the RLDM model.
-#     """
-
-#     # Ensure parameters are correctly extracted and passed to your custom function.
-#     def logp(data, *dist_params) -> jnp.ndarray:
-#         """Compute the log likelihood for the RLDM model.
-
-#         Parameters
-#         ----------
-#         dist_params
-#             A tuple containing the subject index, number of trials per subject,
-#             data, and model parameters. In this case, it is expected to be
-#             (rl_alpha, scaler, a, z, t, theta, trial, feedback).
-
-#         Returns
-#         -------
-#         jnp.ndarray
-#             The log likelihoods for each subject.
-#         """
-#         # Extract extra fields (adjust indices based on your model)
-#         participant_id = dist_params[num_params]
-#         trial = dist_params[num_params + 1]
-#         feedback = dist_params[num_params + 2]
-
-#         subj = jnp.unique(participant_id, size=n_participants).astype(jnp.int32)
-
-#         # create parameter arrays to be passed to the likelihood function
-#         rl_alpha, scaler, a, z, t, theta = dist_params[:num_params]
-
-#         # pass the parameters and data to the likelihood function
-#         return vec_logp(
-#             subj,
-#             n_trials,
-#             data,
-#             rl_alpha,
-#             scaler,
-#             a,
-#             z,
-#             t,
-#             theta,
-#             trial,
-#             feedback,
-#         )
-
-#     return logp
-
-def make_logp_func(n_participants: int, n_trials_per_subj: jnp.ndarray) -> Callable:
-    """Create a log likelihood function for the RLDM model with variable trials per subject.
+def make_logp_func(n_participants: int, n_trials: int) -> Callable:
+    """Create a log likelihood function for the RLDM model.
 
     Parameters
     ----------
     n_participants : int
         The number of participants in the dataset.
-    n_trials_per_subj : jnp.ndarray
-        An array of length n_participants, where each entry is the number of trials for that participant.
+    n_trials : int
+        The number of trials per participant.
 
     Returns
     -------
@@ -653,71 +594,175 @@ def make_logp_func(n_participants: int, n_trials_per_subj: jnp.ndarray) -> Calla
         A function that computes the log likelihood for the RLDM model.
     """
 
+    # Ensure parameters are correctly extracted and passed to your custom function.
     def logp(data, *dist_params) -> jnp.ndarray:
-        """Compute the log likelihood for the RLDM model with variable trials per subject.
+        """Compute the log likelihood for the RLDM model.
 
         Parameters
         ----------
         dist_params
             A tuple containing the subject index, number of trials per subject,
-            data, and model parameters.
+            data, and model parameters. In this case, it is expected to be
+            (rl_alpha, scaler, a, z, t, theta, trial, feedback).
 
         Returns
         -------
         jnp.ndarray
             The log likelihoods for each subject.
         """
+        # Extract extra fields (adjust indices based on your model)
         participant_id = dist_params[num_params]
         trial = dist_params[num_params + 1]
         feedback = dist_params[num_params + 2]
 
         subj = jnp.unique(participant_id, size=n_participants).astype(jnp.int32)
 
+        # create parameter arrays to be passed to the likelihood function
         rl_alpha, scaler, a, z, t, theta = dist_params[:num_params]
 
-        # Compute start and end indices for each subject's trials
-        trial_counts = n_trials_per_subj
-        trial_starts = jnp.concatenate([jnp.array([0]), jnp.cumsum(trial_counts)[:-1]])
-        trial_ends = jnp.cumsum(trial_counts)
-
-        def single_subj_logp(subj_idx):
-            start = trial_starts[subj_idx]
-            end = trial_ends[subj_idx]
-            ntrials = trial_counts[subj_idx]
-
-            # Slice data and parameters for this subject
-            data_subj = data[start:end]
-            rl_alpha_subj = rl_alpha[start:end]
-            scaler_subj = scaler[start:end]
-            a_subj = a[start:end]
-            z_subj = z[start:end]
-            t_subj = t[start:end]
-            theta_subj = theta[start:end]
-            trial_subj = trial[start:end]
-            feedback_subj = feedback[start:end]
-
-            return rlssm1_logp_inner_func(
-                subj_idx,
-                ntrials,
-                data_subj,
-                rl_alpha_subj,
-                scaler_subj,
-                a_subj,
-                z_subj,
-                t_subj,
-                theta_subj,
-                trial_subj,
-                feedback_subj,
-            )
-
-        # Vectorize over subjects
-        logps = jax.vmap(single_subj_logp)(jnp.arange(n_participants))
-        return logps.ravel()
+        # pass the parameters and data to the likelihood function
+        return vec_logp(
+            subj,
+            n_trials,
+            data,
+            rl_alpha,
+            scaler,
+            a,
+            z,
+            t,
+            theta,
+            trial,
+            feedback,
+        )
 
     return logp
 
-# def make_rldm_logp_op(n_participants: int, n_trials: int, n_params: int) -> Callable:
-def make_rldm_logp_op(n_participants: int, n_trials_per_sub: list, n_params: int) -> Callable:
+# def make_logp_func(n_participants: int, n_trials_per_subj: jnp.ndarray) -> Callable:
+#     """Create a log likelihood function for the RLDM model with variable trials per subject.
+
+#     Parameters
+#     ----------
+#     n_participants : int
+#         The number of participants in the dataset.
+#     n_trials_per_subj : jnp.ndarray
+#         An array of length n_participants, where each entry is the number of trials for that participant.
+
+#     Returns
+#     -------
+#     callable
+#         A function that computes the log likelihood for the RLDM model.
+#     """
+
+#     def logp(data, *dist_params) -> jnp.ndarray:
+#         """Compute the log likelihood for the RLDM model with variable trials per subject.
+
+#         Parameters
+#         ----------
+#         dist_params
+#             A tuple containing the subject index, number of trials per subject,
+#             data, and model parameters.
+
+#         Returns
+#         -------
+#         jnp.ndarray
+#             The log likelihoods for each subject.
+#         """
+#         participant_id = dist_params[num_params]
+#         trial = dist_params[num_params + 1]
+#         feedback = dist_params[num_params + 2]
+
+#         subj = jnp.unique(participant_id, size=n_participants).astype(jnp.int32)
+
+#         rl_alpha, scaler, a, z, t, theta = dist_params[:num_params]
+
+#         # Compute start and end indices for each subject's trials
+#         trial_counts = n_trials_per_subj
+#         trial_starts = jnp.concatenate([jnp.array([0]), jnp.cumsum(trial_counts)[:-1]])
+#         trial_ends = jnp.cumsum(trial_counts)
+
+#         def single_subj_logp(subj_idx):
+#             start = trial_starts[subj_idx]
+#             end = trial_ends[subj_idx]
+#             ntrials = trial_counts[subj_idx]
+
+#             # Slice data and parameters for this subject
+#             data_subj = data[start:end]
+#             rl_alpha_subj = rl_alpha[start:end]
+#             scaler_subj = scaler[start:end]
+#             a_subj = a[start:end]
+#             z_subj = z[start:end]
+#             t_subj = t[start:end]
+#             theta_subj = theta[start:end]
+#             trial_subj = trial[start:end]
+#             feedback_subj = feedback[start:end]
+
+#             return rlssm1_logp_inner_func(
+#                 subj_idx,
+#                 ntrials,
+#                 data_subj,
+#                 rl_alpha_subj,
+#                 scaler_subj,
+#                 a_subj,
+#                 z_subj,
+#                 t_subj,
+#                 theta_subj,
+#                 trial_subj,
+#                 feedback_subj,
+#             )
+
+#         # Vectorize over subjects
+#         logps = jax.vmap(single_subj_logp)(jnp.arange(n_participants))
+#         return logps.ravel()
+
+#     return logp
+
+# ...existing code...
+
+# def make_logp_func(n_participants: int, n_trials: jnp.ndarray) -> Callable:
+#     """Create a log likelihood function for the RLDM model with variable trials per subject (padded).
+
+#     Parameters
+#     ----------
+#     n_participants : int
+#         The number of participants in the dataset.
+#     n_trials_per_subj : jnp.ndarray
+#         An array of length n_participants, where each entry is the number of trials for that participant.
+#     max_trials : int
+#         The maximum number of trials for any participant (for padding).
+
+#     Returns
+#     -------
+#     callable
+#         A function that computes the log likelihood for the RLDM model.
+#     """
+
+#     def logp(data, rl_alpha, scaler, a, z, t, theta, trial, feedback, mask) -> jnp.ndarray:
+#         # data: (n_participants, max_trials, obs_dim)
+#         # mask: (n_participants, max_trials) -- 1 for real trial, 0 for padded
+
+#         def single_subj_logp(subj_idx):
+#             ntrials = n_trials_per_subj[subj_idx]
+#             # Only use the first ntrials for this subject
+#             data_subj = data[subj_idx, :ntrials]
+#             rl_alpha_subj = rl_alpha[subj_idx, :ntrials]
+#             scaler_subj = scaler[subj_idx, :ntrials]
+#             a_subj = a[subj_idx, :ntrials]
+#             z_subj = z[subj_idx, :ntrials]
+#             t_subj = t[subj_idx, :ntrials]
+#             theta_subj = theta[subj_idx, :ntrials]
+#             trial_subj = trial[subj_idx, :ntrials]
+#             feedback_subj = feedback[subj_idx, :ntrials]
+#             return rlssm1_logp_inner_func(
+#                 subj_idx, ntrials, data_subj, rl_alpha_subj, scaler_subj, a_subj, z_subj, t_subj, theta_subj, trial_subj, feedback_subj
+#             )
+
+#         logps = jax.vmap(single_subj_logp)(jnp.arange(n_participants))
+#         return logps.ravel()
+
+#     return logp
+
+def make_rldm_logp_op(n_participants: int, n_trials: int, n_params: int) -> Callable:
+# def make_rldm_logp_op(n_participants: int, n_trials_per_sub: list, n_params: int, max_trials: int) -> Callable:
     """Create a pytensor Op for the likelihood function of RLDM model.
 
     Parameters
@@ -732,8 +777,8 @@ def make_rldm_logp_op(n_participants: int, n_trials_per_sub: list, n_params: int
     callable
         A function that computes the log likelihood for the RLDM model.
     """
-    # logp = make_logp_func(n_participants, n_trials)
-    logp = make_logp_func(n_participants, jnp.array(n_trials_per_sub))
+    logp = make_logp_func(n_participants, n_trials)
+    # logp = make_logp_func(n_participants, jnp.array(n_trials_per_sub), max_trials)
     vjp_logp = make_vjp_func(logp, params_only=False, n_params=n_params)
 
     return make_jax_logp_ops(
