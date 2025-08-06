@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 from jax.lax import dynamic_slice, scan
 from jax.scipy.special import logsumexp
-
+from jax.lax import dynamic_slice_in_dim, scan
 from ..distribution_utils.func_utils import make_vjp_func
 from ..distribution_utils.jax import make_jax_logp_ops
 
@@ -45,6 +45,22 @@ rlssm_model_config_list = {
         "decision_model": "LAN",
         "LAN": "angle",
     },
+    "rlssm-tst": {
+        "name": "rlssm-tst",
+        "description": "TWO STAGE TASK. RLSSM model where the learning process is a simple \
+                        Rescorla-Wagner model in a 2-armed bandit task. \
+                        The decision process is a collapsing bound DDM (angle model). \
+                        Same as rlssm1, but with dual learning rates for positive and \
+                         negative prediction errors. \
+                        This model is meant to serve as a tutorial for showing how to  \
+                         implement a custom RLSSM model in HSSM.",
+        "n_params": 7,
+        "n_extra_fields": 6,
+        "list_params": ['rl.alpha', 'scaler', 'a', 'Z', 't', 'theta', 'w'],
+        "extra_fields": ["participant_id", "trial_id", "feedback", "state1", "state2", "response2"],
+        "decision_model": "LAN",
+        "LAN": "angle",
+    },    
     "rlwmssm_v2": {
         "name": "rlwmssm_v2",
         "description": "RLSSM model where the learning process is the RLWM model \
@@ -78,7 +94,7 @@ rlssm_model_config_list = {
     },
 }
 
-MODEL_NAME = "rlssm1"
+MODEL_NAME = "rlssm-tst"
 MODEL_CONFIG = rlssm_model_config_list[MODEL_NAME]
 
 if not isinstance(MODEL_CONFIG["n_extra_fields"], int) or not isinstance(
@@ -282,100 +298,286 @@ def rlssm2_logp_inner_func(
 
     return LL.ravel()
 
+#         "state1", 
+#         "state2", 
+#         "response2"
+
 # RLSSM model liklihood function
 def rlssm2_tst_1step_logp_inner_func(
     subj,
     ntrials_subj,
     data,
     rl_alpha,
-    rl_alpha_neg,
+    # rl_alpha_neg,
     scaler,
     a,
     z,
     t,
     theta,
+    w,
     trial,
     feedback,
+    state1, 
+    state2, 
+    response2
 ):
     """Compute the log likelihood for a given subject using the RLDM model."""
     rt = data[:, 0]
     response  = data[:, 1]
     
+    # response2 = data[:, 2]  # New response2 column
+    # state1 = data[:, 3]  # New state1 column
+    # state2 = data[:, 4]  # New state2 column
+    
+    
     
 
-    subj = jnp.astype(subj, jnp.int32)
+    # subj = jnp.astype(subj, jnp.int32)
+    subj = jnp.asarray(subj, dtype=jnp.int32)
 
     # Extracting the parameters and data for the specific subject
     subj_rl_alpha = dynamic_slice(rl_alpha, [subj * ntrials_subj], [ntrials_subj])
-    subj_rl_alpha_neg = dynamic_slice(
-        rl_alpha_neg, [subj * ntrials_subj], [ntrials_subj]
-    )
+    # subj_rl_alpha_neg = dynamic_slice(
+    #     rl_alpha_neg, [subj * ntrials_subj], [ntrials_subj]
+    # )
     subj_scaler = dynamic_slice(scaler, [subj * ntrials_subj], [ntrials_subj])
     subj_a = dynamic_slice(a, [subj * ntrials_subj], [ntrials_subj])
     subj_z = dynamic_slice(z, [subj * ntrials_subj], [ntrials_subj])
     subj_t = dynamic_slice(t, [subj * ntrials_subj], [ntrials_subj])
     subj_theta = dynamic_slice(theta, [subj * ntrials_subj], [ntrials_subj])
-
+    subj_w = dynamic_slice(w, [subj * ntrials_subj], [ntrials_subj])
     subj_trial = dynamic_slice(trial, [subj * ntrials_subj], [ntrials_subj])
     subj_response = dynamic_slice(response, [subj * ntrials_subj], [ntrials_subj])
     subj_rt = dynamic_slice(rt, [subj * ntrials_subj], [ntrials_subj])
     subj_feedback = dynamic_slice(feedback, [subj * ntrials_subj], [ntrials_subj])
+    
+    subj_response2 = dynamic_slice(response2, [subj * ntrials_subj], [ntrials_subj])
+    subj_state1 = dynamic_slice(state1, [subj * ntrials_subj], [ntrials_subj])
+    subj_state2 = dynamic_slice(state2, [subj * ntrials_subj], [ntrials_subj])    
+    
 
     # Initialize the LAN matrix that will hold the trial-by-trial data
     # The matrix will have 7 columns: data (choice, rt) and parameters of
     # the angle model (v, a, z, t, theta)
     # The number of rows is equal to the number of trials for the subject
-    q_val = jnp.ones(2) * 0.5
+    # q_val = jnp.ones(2) * 0.5
+    
+     # Q-values: first stage (2 actions), second stage (2 states x 2 actions)
+    q_val_stage1 = jnp.ones(2) * 0.5
+    q_val_stage2 = jnp.ones((2, 2)) * 0.5  # shape: [n_states, n_actions]   
+    
     LAN_matrix_init = jnp.zeros((ntrials_subj, 7))
-
+    # LAN_matrix_init = jnp.zeros((ntrials_subj, 10))  # v1, v2, a, z, t, theta, rt, action1, action2, state2
+   
+    # Transition matrix: p(s2|a1)
+    # Standard Daw task: action 0 -> state 0 with 0.7, state 1 with 0.3; action 1 reversed
+    trans_mat = jnp.array([[0.7, 0.3], [0.3, 0.7]])  # shape (2, 2)
+    
     # function to process each trial
     def process_trial(carry, inputs):
-        q_val, loglik, LAN_matrix, t = carry
-        state, action, rt, reward = inputs
-        state = jnp.astype(state, jnp.int32)
-        action = jnp.astype(action, jnp.int32)
+        # q_val, loglik, LAN_matrix, t = carry
+        # state, action, rt, reward = inputs
+        # state = jnp.astype(state, jnp.int32)
+        # action = jnp.astype(action, jnp.int32)
+        
+        q_val_stage1, q_val_stage2, loglik, LAN_matrix, t = carry
+        s1, a1, a2, s2, rt, reward = inputs
+        s1 = jnp.astype(s1, jnp.int32)
+        a1 = jnp.astype(a1, jnp.int32)
+        a2 = jnp.astype(a2, jnp.int32)
+        s2 = jnp.astype(s2, jnp.int32)
+
+        q_mb = jnp.array([
+            trans_mat[0, 0] * q_val_stage2[0, :].max() + trans_mat[0, 1] * q_val_stage2[1, :].max(),
+            trans_mat[1, 0] * q_val_stage2[0, :].max() + trans_mat[1, 1] * q_val_stage2[1, :].max(),
+        ])
+        
+        # Mixture Q
+        w_t = subj_w[t]    
+        net_q = jnp.array(w_t * q_mb + (1 - w_t) * q_val_stage1)
 
         # drift rate on each trial depends on difference in expected rewards for
         # the two alternatives:
         # drift rate = (q_up - q_low) * scaler where
         # the scaler parameter describes the weight to put on the difference in
         # q-values.
-        computed_v = (q_val[1] - q_val[0]) * subj_scaler[t]
+        v1 = (net_q[1] - net_q[0]) * subj_scaler[t]
 
         # compute the reward prediction error
-        delta_RL = reward - q_val[action]
+        # delta_RL = reward - q_val[action]
+        
+            # RL update for second-stage Q-values
+        delta2 = reward - q_val_stage2[s2, a2]
+        q_val_stage2 = q_val_stage2.at[s2, a2].set(q_val_stage2[s2, a2] + subj_rl_alpha[t] * delta2)
+
+        # RL update for first-stage model-free Q-values
+        expected_value = q_val_stage2[s2, a2]
+        delta1 = expected_value - q_val_stage1[a1]
+        q_val_stage1 = q_val_stage1.at[a1].set(q_val_stage1[a1] + subj_rl_alpha[t] * delta1)
+ 
+         # Fill LAN matrix for this trial
+        segment_result = jnp.array([
+            v1, subj_a[t], subj_z[t], subj_t[t], subj_theta[t], rt, a1
+        ])
+        LAN_matrix = LAN_matrix.at[t, :].set(segment_result)
+
+        return (q_val_stage1, q_val_stage2, loglik, LAN_matrix, t + 1), None
+       
 
         # if delta_RL < 0, use learning rate subj_rl_alpha_neg[t]
         # else use subj_rl_alpha[t]
-        rl_alpha_t = jnp.where(delta_RL < 0, subj_rl_alpha_neg[t], subj_rl_alpha[t])
+        # rl_alpha_t = jnp.where(delta_RL < 0, subj_rl_alpha_neg[t], subj_rl_alpha[t])
+        # rl_alpha_t = subj_rl_alpha[t] # Use the same learning rate for both positive and negative prediction errors
 
         # update the q-values using the RL learning rule (here, simple TD rule)
-        q_val = q_val.at[action].set(q_val[action] + rl_alpha_t * delta_RL)
+        # q_val = q_val.at[action].set(q_val[action] + rl_alpha_t * delta_RL)
 
         # update the LAN_matrix with the current trial data
         # The first column is the drift rate, followed by
         # the parameters a, z, t, theta, rt, and action
-        segment_result = jnp.array(
-            [computed_v, subj_a[t], subj_z[t], subj_t[t], subj_theta[t], rt, action]
-        )
-        LAN_matrix = LAN_matrix.at[t, :].set(segment_result)
+        # segment_result = jnp.array(
+        #     [computed_v, subj_a[t], subj_z[t], subj_t[t], subj_theta[t], rt, action]
+        # )
+        # LAN_matrix = LAN_matrix.at[t, :].set(segment_result)
 
-        return (q_val, loglik, LAN_matrix, t + 1), None
-
+        # return (q_val, loglik, LAN_matrix, t + 1), None
+        
+    # s1, a1, a2, s2, rt, reward = inputs
+        
     trials = (
-        subj_trial,
-        subj_response,
+        subj_state1,      # s1
+        subj_response,    # a1
+        subj_response2,   # a2
+        subj_state2,      # s2
         subj_rt,
         subj_feedback,
     )
-    (q_val, LL, LAN_matrix, _), _ = scan(
-        process_trial, (q_val, 0.0, LAN_matrix_init, 0), trials
-    )
+    
+    # trials = (
+    #     subj_trial,
+    #     subj_response,
+    #     subj_rt,
+    #     subj_feedback,
+    # )    
+    
+    (q_val_stage1, q_val_stage2, LL, LAN_matrix, _), _ = scan(
+        process_trial, (q_val_stage1, q_val_stage2, 0.0, LAN_matrix_init, 0), trials
+    )    
+    # trials = (
+    #     subj_trial,
+    #     subj_response,
+    #     subj_rt,
+    #     subj_feedback,
+    # )
+    # (q_val, LL, LAN_matrix, _), _ = scan(
+    #     process_trial, (q_val, 0.0, LAN_matrix_init, 0), trials
+    # )
 
     # forward pass through the LAN to compute log likelihoods
     LL = lan_logp_jax_func(LAN_matrix)
+    
 
     return LL.ravel()
+    # return jnp.sum(LL)
+
+# import jax
+# import jax.numpy as jnp
+# from jax.lax import dynamic_slice_in_dim, scan
+
+# ------------------------------------------------------------------------
+# Inner likelihood  (returns (n_trials,)  log-likelihood vector)
+# ------------------------------------------------------------------------
+# def rlssm2_tst_1step_logp_inner_func(
+#     subj,
+#     ntrials_subj,
+#     data,
+#     rl_alpha,
+#     scaler,
+#     a,
+#     z,
+#     t0,
+#     theta,
+#     w,
+#     trial,     # not used inside but kept for signature parity
+#     feedback,
+#     state1,
+#     state2,
+#     response2,
+# ):
+#     """Vector of log-likelihoods for one subject (length = ntrials_subj)."""
+
+#     # ---------- helper: slice this subject’s window ----------------------
+#     def slc(arr):
+#         start = jax.lax.convert_element_type(subj * ntrials_subj, jnp.int32)
+#         return dynamic_slice_in_dim(arr, start, ntrials_subj, axis=0)
+
+#     # ------------- per-trial observed variables --------------------------
+#     rt  = data[:, 0]
+#     a1  = data[:, 1]              # first-stage choice
+
+#     # ------------- per-trial parameters & covariates ---------------------
+#     rl_a   = slc(rl_alpha)
+#     sclr   = slc(scaler)
+#     a_s    = slc(a)
+#     z_s    = slc(z)
+#     t0_s   = slc(t0)
+#     th_s   = slc(theta)
+#     w_s    = slc(w)
+
+#     a2 = slc(response2)           # second-stage choice
+#     s1 = slc(state1)
+#     s2 = slc(state2)
+#     rew = slc(feedback)
+
+#     # ---------------------- model state ----------------------------------
+#     q1 = jnp.full(2,     0.5)     # first stage Q
+#     q2 = jnp.full((2, 2), 0.5)    # second stage Q
+
+#     P = jnp.array([[0.7, 0.3],    # transition matrix
+#                    [0.3, 0.7]])
+
+#     LAN0 = jnp.zeros((ntrials_subj, 7))  # v, a, z, t0, θ, rt, a1
+
+#     # ---------------- per-trial update fn (for scan) ---------------------
+#     def step(carry, inp):
+#         q1_, q2_, LAN, t = carry
+#         s1_t, a1_t, a2_t, s2_t, rt_t, r_t = inp
+
+#         s1_t = s1_t.astype(jnp.int32)
+#         a1_t = a1_t.astype(jnp.int32)
+#         a2_t = a2_t.astype(jnp.int32)
+#         s2_t = s2_t.astype(jnp.int32)
+
+#         # model-based Q
+#         q_mb = jnp.stack([
+#             P[0, 0] * q2_[0].max() + P[0, 1] * q2_[1].max(),
+#             P[1, 0] * q2_[0].max() + P[1, 1] * q2_[1].max(),
+#         ])
+
+#         net_q = w_s[t] * q_mb + (1.0 - w_s[t]) * q1_
+#         drift = (net_q[1] - net_q[0]) * sclr[t]
+
+#         # TD updates
+#         delta2 = r_t - q2_[s2_t, a2_t]
+#         q2_ = q2_.at[s2_t, a2_t].add(rl_a[t] * delta2)
+
+#         delta1 = q2_[s2_t, a2_t] - q1_[a1_t]
+#         q1_ = q1_.at[a1_t].add(rl_a[t] * delta1)
+
+#         # build LAN row
+#         LAN_row = jnp.stack(
+#             [drift, a_s[t], z_s[t], t0_s[t], th_s[t], rt_t, a1_t]
+#         )
+#         LAN = LAN.at[t, :].set(LAN_row)
+
+#         return (q1_, q2_, LAN, t + 1), None
+
+#     inputs = (s1, a1, a2, s2, rt, rew)
+#     (_, _, LAN_mat, _), _ = scan(step, (q1, q2, LAN0, 0), inputs)
+
+#     # forward through LAN → (n_trials,) log-lik vector
+#     return lan_logp_jax_func(LAN_mat)
+
 
 # auxiliary function for the RLWMSSM model
 def jax_call_LAN(LAN_matrix, unidim_mask):
@@ -563,7 +765,8 @@ def rlwmssm_v2_inner_func(
 
 
 rldm_logp_inner_func_vmapped = jax.vmap(
-    rlssm1_logp_inner_func,
+    # rlssm1_logp_inner_func,
+    rlssm2_tst_1step_logp_inner_func,
     in_axes=[0] + [None] * (total_params + 1),
 )
 
@@ -577,7 +780,119 @@ def vec_logp(*args):
 
     return output
 
+# def make_logp_func(n_participants: int, n_trials: int) -> Callable:
+#     """Create a log likelihood function for the RLDM model.
 
+#     Parameters
+#     ----------
+#     n_participants : int
+#         The number of participants in the dataset.
+#     n_trials : int
+#         The number of trials per participant.
+
+#     Returns
+#     -------
+#     callable
+#         A function that computes the log likelihood for the RLDM model.
+#     """
+
+#     # Ensure parameters are correctly extracted and passed to your custom function.
+#     def logp(data, *dist_params) -> jnp.ndarray:
+#         """Compute the log likelihood for the RLDM model.
+
+#         Parameters
+#         ----------
+#         dist_params
+#             A tuple containing the subject index, number of trials per subject,
+#             data, and model parameters. In this case, it is expected to be
+#             (rl_alpha, scaler, a, z, t, theta, trial, feedback).
+
+#         Returns
+#         -------
+#         jnp.ndarray
+#             The log likelihoods for each subject.
+#         """
+#         # Extract extra fields (adjust indices based on your model)
+#         participant_id = dist_params[num_params]
+#         trial = dist_params[num_params + 1]
+#         feedback = dist_params[num_params + 2]
+
+#         subj = jnp.unique(participant_id, size=n_participants).astype(jnp.int32)
+
+#         # create parameter arrays to be passed to the likelihood function
+#         rl_alpha, scaler, a, z, t, theta = dist_params[:num_params]
+
+#         # pass the parameters and data to the likelihood function
+#         return vec_logp(
+#             subj,
+#             n_trials,
+#             data,
+#             rl_alpha,
+#             scaler,
+#             a,
+#             z,
+#             t,
+#             theta,
+#             trial,
+#             feedback,
+#         )
+
+#     return logp
+# def make_logp_func(n_participants: int, n_trials_per_subj: jnp.ndarray) -> callable:
+#     """Create a log likelihood function for the RLDM model with variable trials per subject."""
+
+#     num_params = 6  # Adjust if your model uses a different number of parameters
+
+#     def logp(data, rl_alpha, scaler, a, z, t, theta, participant_id, trial, feedback):
+#         # Compute start and end indices for each subject's trials
+#         trial_counts = n_trials_per_subj
+#         trial_starts = jnp.concatenate([jnp.array([0]), jnp.cumsum(trial_counts)[:-1]])
+#         trial_ends = jnp.cumsum(trial_counts)
+
+#         def single_subj_logp(subj_idx):
+#             start = trial_starts[subj_idx]
+#             ntrials = trial_counts[subj_idx]
+#             # Use dynamic_slice for JAX compatibility
+#             data_subj = jax.lax.dynamic_slice(data, (start, 0), (ntrials, data.shape[1]))
+#             rl_alpha_subj = jax.lax.dynamic_slice(rl_alpha, (start,), (ntrials,))
+#             scaler_subj = jax.lax.dynamic_slice(scaler, (start,), (ntrials,))
+#             a_subj = jax.lax.dynamic_slice(a, (start,), (ntrials,))
+#             z_subj = jax.lax.dynamic_slice(z, (start,), (ntrials,))
+#             t_subj = jax.lax.dynamic_slice(t, (start,), (ntrials,))
+#             theta_subj = jax.lax.dynamic_slice(theta, (start,), (ntrials,))
+#             trial_subj = jax.lax.dynamic_slice(trial, (start,), (ntrials,))
+#             feedback_subj = jax.lax.dynamic_slice(feedback, (start,), (ntrials,))
+
+#             return rlssm1_logp_inner_func(
+#                 subj_idx,
+#                 ntrials,
+#                 data_subj,
+#                 rl_alpha_subj,
+#                 scaler_subj,
+#                 a_subj,
+#                 z_subj,
+#                 t_subj,
+#                 theta_subj,
+#                 trial_subj,
+#                 feedback_subj,
+#             )
+
+#         logps = jax.vmap(single_subj_logp)(jnp.arange(n_participants))
+#         return logps.ravel()
+
+#     return logp
+
+# def make_rldm_logp_op(n_participants: int, n_trials_per_sub: list, n_params: int) -> callable:
+#     """Create a pytensor Op for the likelihood function of RLDM model with variable trials per subject."""
+#     logp = make_logp_func(n_participants, jnp.array(n_trials_per_sub))
+#     vjp_logp = make_vjp_func(logp, params_only=False, n_params=n_params)
+
+#     return make_jax_logp_ops(
+#         logp=jax.jit(logp),
+#         logp_vjp=jax.jit(vjp_logp),
+#         logp_nojit=logp,
+#         n_params=n_params,
+#     )
 def make_logp_func(n_participants: int, n_trials: int) -> Callable:
     """Create a log likelihood function for the RLDM model.
 
@@ -614,11 +929,18 @@ def make_logp_func(n_participants: int, n_trials: int) -> Callable:
         participant_id = dist_params[num_params]
         trial = dist_params[num_params + 1]
         feedback = dist_params[num_params + 2]
+        state1 = dist_params[num_params + 3]
+        state2 = dist_params[num_params + 4]
+        response2 = dist_params[num_params + 5] 
+        
+
+
+
 
         subj = jnp.unique(participant_id, size=n_participants).astype(jnp.int32)
 
         # create parameter arrays to be passed to the likelihood function
-        rl_alpha, scaler, a, z, t, theta = dist_params[:num_params]
+        rl_alpha, scaler, a, z, t, theta, w = dist_params[:num_params]
 
         # pass the parameters and data to the likelihood function
         return vec_logp(
@@ -631,135 +953,16 @@ def make_logp_func(n_participants: int, n_trials: int) -> Callable:
             z,
             t,
             theta,
+            w,
             trial,
             feedback,
+            state1,
+            state2,
+            response2,
         )
 
     return logp
 
-# def make_logp_func(n_participants: int, n_trials_per_subj: jnp.ndarray) -> Callable:
-#     """Create a log likelihood function for the RLDM model with variable trials per subject.
-
-#     Parameters
-#     ----------
-#     n_participants : int
-#         The number of participants in the dataset.
-#     n_trials_per_subj : jnp.ndarray
-#         An array of length n_participants, where each entry is the number of trials for that participant.
-
-#     Returns
-#     -------
-#     callable
-#         A function that computes the log likelihood for the RLDM model.
-#     """
-
-#     def logp(data, *dist_params) -> jnp.ndarray:
-#         """Compute the log likelihood for the RLDM model with variable trials per subject.
-
-#         Parameters
-#         ----------
-#         dist_params
-#             A tuple containing the subject index, number of trials per subject,
-#             data, and model parameters.
-
-#         Returns
-#         -------
-#         jnp.ndarray
-#             The log likelihoods for each subject.
-#         """
-#         participant_id = dist_params[num_params]
-#         trial = dist_params[num_params + 1]
-#         feedback = dist_params[num_params + 2]
-
-#         subj = jnp.unique(participant_id, size=n_participants).astype(jnp.int32)
-
-#         rl_alpha, scaler, a, z, t, theta = dist_params[:num_params]
-
-#         # Compute start and end indices for each subject's trials
-#         trial_counts = n_trials_per_subj
-#         trial_starts = jnp.concatenate([jnp.array([0]), jnp.cumsum(trial_counts)[:-1]])
-#         trial_ends = jnp.cumsum(trial_counts)
-
-#         def single_subj_logp(subj_idx):
-#             start = trial_starts[subj_idx]
-#             end = trial_ends[subj_idx]
-#             ntrials = trial_counts[subj_idx]
-
-#             # Slice data and parameters for this subject
-#             data_subj = data[start:end]
-#             rl_alpha_subj = rl_alpha[start:end]
-#             scaler_subj = scaler[start:end]
-#             a_subj = a[start:end]
-#             z_subj = z[start:end]
-#             t_subj = t[start:end]
-#             theta_subj = theta[start:end]
-#             trial_subj = trial[start:end]
-#             feedback_subj = feedback[start:end]
-
-#             return rlssm1_logp_inner_func(
-#                 subj_idx,
-#                 ntrials,
-#                 data_subj,
-#                 rl_alpha_subj,
-#                 scaler_subj,
-#                 a_subj,
-#                 z_subj,
-#                 t_subj,
-#                 theta_subj,
-#                 trial_subj,
-#                 feedback_subj,
-#             )
-
-#         # Vectorize over subjects
-#         logps = jax.vmap(single_subj_logp)(jnp.arange(n_participants))
-#         return logps.ravel()
-
-#     return logp
-
-# ...existing code...
-
-# def make_logp_func(n_participants: int, n_trials: jnp.ndarray) -> Callable:
-#     """Create a log likelihood function for the RLDM model with variable trials per subject (padded).
-
-#     Parameters
-#     ----------
-#     n_participants : int
-#         The number of participants in the dataset.
-#     n_trials_per_subj : jnp.ndarray
-#         An array of length n_participants, where each entry is the number of trials for that participant.
-#     max_trials : int
-#         The maximum number of trials for any participant (for padding).
-
-#     Returns
-#     -------
-#     callable
-#         A function that computes the log likelihood for the RLDM model.
-#     """
-
-#     def logp(data, rl_alpha, scaler, a, z, t, theta, trial, feedback, mask) -> jnp.ndarray:
-#         # data: (n_participants, max_trials, obs_dim)
-#         # mask: (n_participants, max_trials) -- 1 for real trial, 0 for padded
-
-#         def single_subj_logp(subj_idx):
-#             ntrials = n_trials_per_subj[subj_idx]
-#             # Only use the first ntrials for this subject
-#             data_subj = data[subj_idx, :ntrials]
-#             rl_alpha_subj = rl_alpha[subj_idx, :ntrials]
-#             scaler_subj = scaler[subj_idx, :ntrials]
-#             a_subj = a[subj_idx, :ntrials]
-#             z_subj = z[subj_idx, :ntrials]
-#             t_subj = t[subj_idx, :ntrials]
-#             theta_subj = theta[subj_idx, :ntrials]
-#             trial_subj = trial[subj_idx, :ntrials]
-#             feedback_subj = feedback[subj_idx, :ntrials]
-#             return rlssm1_logp_inner_func(
-#                 subj_idx, ntrials, data_subj, rl_alpha_subj, scaler_subj, a_subj, z_subj, t_subj, theta_subj, trial_subj, feedback_subj
-#             )
-
-#         logps = jax.vmap(single_subj_logp)(jnp.arange(n_participants))
-#         return logps.ravel()
-
-#     return logp
 
 def make_rldm_logp_op(n_participants: int, n_trials: int, n_params: int) -> Callable:
 # def make_rldm_logp_op(n_participants: int, n_trials_per_sub: list, n_params: int, max_trials: int) -> Callable:
@@ -787,3 +990,10 @@ def make_rldm_logp_op(n_participants: int, n_trials: int, n_params: int) -> Call
         logp_nojit=logp,
         n_params=n_params,
     )
+__all__ = [
+    "make_jax_logp_ops",
+    "rlssm1_logp_inner_func",
+    "make_rldm_logp_op",
+    "make_logp_func",
+    # add any other functions you want to use outside
+]
