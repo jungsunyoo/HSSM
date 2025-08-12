@@ -55,8 +55,8 @@ rlssm_model_config_list = {
                         This model is meant to serve as a tutorial for showing how to  \
                          implement a custom RLSSM model in HSSM.",
         "n_params": 7,
-        "n_extra_fields": 6,
-        "list_params": ['rl.alpha', 'scaler', 'a', 'Z', 't', 'theta', 'w'],
+        "n_extra_fields": 7,
+        "list_params": ['rl.alpha', 'scaler', 'a', 'Z', 't', 'theta', 'w', "valid_upto"],
         "extra_fields": ["participant_id", "trial_id", "feedback", "state1", "state2", "response2"],
         "decision_model": "LAN",
         "LAN": "angle",
@@ -319,7 +319,8 @@ def rlssm2_tst_1step_logp_inner_func(
     feedback,
     state1, 
     state2, 
-    response2
+    response2, 
+    valid_upto
 ):
     """Compute the log likelihood for a given subject using the RLDM model."""
     rt = data[:, 0]
@@ -354,7 +355,10 @@ def rlssm2_tst_1step_logp_inner_func(
     subj_response2 = dynamic_slice(response2, [subj * ntrials_subj], [ntrials_subj])
     subj_state1 = dynamic_slice(state1, [subj * ntrials_subj], [ntrials_subj])
     subj_state2 = dynamic_slice(state2, [subj * ntrials_subj], [ntrials_subj])    
-    
+ 
+     # valid_upto is constant per subject; take the first element of this block
+    subj_valid_upto = dynamic_slice(valid_upto, [subj * ntrials_subj], [1])[0].astype(jnp.int32)
+   
 
     # Initialize the LAN matrix that will hold the trial-by-trial data
     # The matrix will have 7 columns: data (choice, rt) and parameters of
@@ -373,76 +377,43 @@ def rlssm2_tst_1step_logp_inner_func(
     # Standard Daw task: action 0 -> state 0 with 0.7, state 1 with 0.3; action 1 reversed
     trans_mat = jnp.array([[0.7, 0.3], [0.3, 0.7]])  # shape (2, 2)
     
-    # function to process each trial
-    def process_trial(carry, inputs):
-        # q_val, loglik, LAN_matrix, t = carry
-        # state, action, rt, reward = inputs
-        # state = jnp.astype(state, jnp.int32)
-        # action = jnp.astype(action, jnp.int32)
-        
-        q_val_stage1, q_val_stage2, loglik, LAN_matrix, t = carry
-        s1, a1, a2, s2, rt, reward = inputs
-        s1 = jnp.astype(s1, jnp.int32)
-        a1 = jnp.astype(a1, jnp.int32)
-        a2 = jnp.astype(a2, jnp.int32)
-        s2 = jnp.astype(s2, jnp.int32)
+    # Per-trial update with skip for t >= valid_upto
+    def _active_step(payload):
+        q1, q2, loglik, LAN, t, s1_t, a1_t, a2_t, s2_t, rt_t, r_t = payload
+        s1_t = jnp.asarray(s1_t, dtype=jnp.int32)
+        a1_t = jnp.asarray(a1_t, dtype=jnp.int32)
+        a2_t = jnp.asarray(a2_t, dtype=jnp.int32)
+        s2_t = jnp.asarray(s2_t, dtype=jnp.int32)
 
         q_mb = jnp.array([
-            trans_mat[0, 0] * q_val_stage2[0, :].max() + trans_mat[0, 1] * q_val_stage2[1, :].max(),
-            trans_mat[1, 0] * q_val_stage2[0, :].max() + trans_mat[1, 1] * q_val_stage2[1, :].max(),
+            trans_mat[0, 0] * q2[0, :].max() + trans_mat[0, 1] * q2[1, :].max(),
+            trans_mat[1, 0] * q2[0, :].max() + trans_mat[1, 1] * q2[1, :].max(),
         ])
-        
-        # Mixture Q
-        w_t = subj_w[t]    
-        net_q = jnp.array(w_t * q_mb + (1 - w_t) * q_val_stage1)
-
-        # drift rate on each trial depends on difference in expected rewards for
-        # the two alternatives:
-        # drift rate = (q_up - q_low) * scaler where
-        # the scaler parameter describes the weight to put on the difference in
-        # q-values.
+        net_q = subj_w[t] * q_mb + (1.0 - subj_w[t]) * q1
         v1 = (net_q[1] - net_q[0]) * subj_scaler[t]
 
-        # compute the reward prediction error
-        # delta_RL = reward - q_val[action]
-        
-            # RL update for second-stage Q-values
-        delta2 = reward - q_val_stage2[s2, a2]
-        q_val_stage2 = q_val_stage2.at[s2, a2].set(q_val_stage2[s2, a2] + subj_rl_alpha[t] * delta2)
+        delta2 = r_t - q2[s2_t, a2_t]
+        q2 = q2.at[s2_t, a2_t].add(subj_rl_alpha[t] * delta2)
 
-        # RL update for first-stage model-free Q-values
-        expected_value = q_val_stage2[s2, a2]
-        delta1 = expected_value - q_val_stage1[a1]
-        q_val_stage1 = q_val_stage1.at[a1].set(q_val_stage1[a1] + subj_rl_alpha[t] * delta1)
- 
-         # Fill LAN matrix for this trial
-        segment_result = jnp.array([
-            v1, subj_a[t], subj_z[t], subj_t[t], subj_theta[t], rt, a1
-        ])
-        LAN_matrix = LAN_matrix.at[t, :].set(segment_result)
+        delta1 = q2[s2_t, a2_t] - q1[a1_t]
+        q1 = q1.at[a1_t].add(subj_rl_alpha[t] * delta1)
 
-        return (q_val_stage1, q_val_stage2, loglik, LAN_matrix, t + 1), None
-       
+        row = jnp.array([v1, subj_a[t], subj_z[t], subj_t[t], subj_theta[t], rt_t, a1_t])
+        LAN = LAN.at[t, :].set(row)
 
-        # if delta_RL < 0, use learning rate subj_rl_alpha_neg[t]
-        # else use subj_rl_alpha[t]
-        # rl_alpha_t = jnp.where(delta_RL < 0, subj_rl_alpha_neg[t], subj_rl_alpha[t])
-        # rl_alpha_t = subj_rl_alpha[t] # Use the same learning rate for both positive and negative prediction errors
+        return (q1, q2, loglik, LAN, t + 1)
 
-        # update the q-values using the RL learning rule (here, simple TD rule)
-        # q_val = q_val.at[action].set(q_val[action] + rl_alpha_t * delta_RL)
+    def _inactive_step(payload):
+        q1, q2, loglik, LAN, t, *_ = payload
+        return (q1, q2, loglik, LAN, t + 1)
 
-        # update the LAN_matrix with the current trial data
-        # The first column is the drift rate, followed by
-        # the parameters a, z, t, theta, rt, and action
-        # segment_result = jnp.array(
-        #     [computed_v, subj_a[t], subj_z[t], subj_t[t], subj_theta[t], rt, action]
-        # )
-        # LAN_matrix = LAN_matrix.at[t, :].set(segment_result)
-
-        # return (q_val, loglik, LAN_matrix, t + 1), None
-        
-    # s1, a1, a2, s2, rt, reward = inputs
+    def process_trial(carry, inputs):
+        q1, q2, loglik, LAN, t = carry
+        s1_t, a1_t, a2_t, s2_t, rt_t, r_t = inputs
+        active = t < subj_valid_upto
+        payload = (q1, q2, loglik, LAN, t, s1_t, a1_t, a2_t, s2_t, rt_t, r_t)
+        q1, q2, loglik, LAN, t_next = jax.lax.cond(active, _active_step, _inactive_step, payload)
+        return (q1, q2, loglik, LAN, t_next), None
         
     trials = (
         subj_state1,      # s1
@@ -452,31 +423,18 @@ def rlssm2_tst_1step_logp_inner_func(
         subj_rt,
         subj_feedback,
     )
-    
-    # trials = (
-    #     subj_trial,
-    #     subj_response,
-    #     subj_rt,
-    #     subj_feedback,
-    # )    
+
     
     (q_val_stage1, q_val_stage2, LL, LAN_matrix, _), _ = scan(
         process_trial, (q_val_stage1, q_val_stage2, 0.0, LAN_matrix_init, 0), trials
     )    
-    # trials = (
-    #     subj_trial,
-    #     subj_response,
-    #     subj_rt,
-    #     subj_feedback,
-    # )
-    # (q_val, LL, LAN_matrix, _), _ = scan(
-    #     process_trial, (q_val, 0.0, LAN_matrix_init, 0), trials
-    # )
+
 
     # forward pass through the LAN to compute log likelihoods
     LL = lan_logp_jax_func(LAN_matrix)
-    
-
+    # Zero-out padded trials (indices >= valid_upto)
+    valid_mask = (jnp.arange(ntrials_subj) < subj_valid_upto).astype(LL.dtype)    
+    LL = LL * valid_mask
     return LL.ravel()
     # return jnp.sum(LL)
 
@@ -931,7 +889,8 @@ def make_logp_func(n_participants: int, n_trials: int) -> Callable:
         feedback = dist_params[num_params + 2]
         state1 = dist_params[num_params + 3]
         state2 = dist_params[num_params + 4]
-        response2 = dist_params[num_params + 5] 
+        response2 = dist_params[num_params + 5]
+        valid_upto = dist_params[num_params + 6] 
         
 
 
@@ -959,6 +918,7 @@ def make_logp_func(n_participants: int, n_trials: int) -> Callable:
             state1,
             state2,
             response2,
+            valid_upto
         )
 
     return logp

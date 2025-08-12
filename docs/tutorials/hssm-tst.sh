@@ -1,0 +1,30 @@
+#!/bin/bash
+#SBATCH --job-name=hssmtst      ## Name of the job.
+#SBATCH -A bornstea_lab     ## account to charge
+#SBATCH -p standard          ## partition/queue name
+#SBATCH --time=335:00:00
+#SBATCH -N 1
+#SBATCH -c 4
+#SBATCH --mem=8G
+#SBATCH --array=0-3
+#SBATCH --mail-type=end               ## send email when the job ends
+#SBATCH --mail-user=jungsuy@uci.edu  ## use this email address
+
+# module load python/3.11  # or your env activation
+# source ~/envs/hssm/bin/activate
+module load miniconda3
+conda activate hssm
+
+# This next line just runs the python script
+
+# python3 running_hddm_cv.py ${1} $SLURM_ARRAY_TASK_ID ${2} -1 0
+python3 hssm-tst.py \
+  --ssc ${1} \
+  --chain-id $SLURM_ARRAY_TASK_ID \
+  --draws 10000 \
+  --tune 2000 \
+  # --sampler nuts_numpyro \
+  # --outdir chains
+
+exit
+
