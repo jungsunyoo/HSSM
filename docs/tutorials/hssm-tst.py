@@ -11,6 +11,39 @@ from hssm.distribution_utils.dist import make_hssm_rv
 from ssms.basic_simulators.simulator import simulator
 from hssm.likelihoods.rldm import make_rldm_logp_op
 
+# Add this helper where you prepare the dataset
+def add_valid_upto_and_pad(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.sort_values(["participant_id", "trial_id"]).reset_index(drop=True)
+    counts = df.groupby("participant_id").size()
+    max_len = int(counts.max())
+
+    def pad_group(g):
+        g = g.copy()
+        n = int(len(g))
+        g["valid_upto"] = n
+        if n < max_len:
+            pid = int(g["participant_id"].iloc[0])
+            start_trial = int(g["trial_id"].max()) + 1
+            pad_len = max_len - n
+            tail = pd.DataFrame({
+                "participant_id": pid,
+                "trial_id": np.arange(start_trial, start_trial + pad_len, dtype=int),
+                "response": 0,
+                "response2": 0,
+                "rt": 0.0,
+                "feedback": 0.0,
+                "state1": 0,
+                "state2": 0,
+                "valid_upto": n,
+            })
+            g = pd.concat([g, tail], ignore_index=True)
+        return g
+
+    out = df.groupby("participant_id", group_keys=False).apply(pad_group).reset_index(drop=True)
+    for c in ["participant_id", "trial_id", "response", "response2", "state1", "state2", "valid_upto"]:
+        if c in out.columns:
+            out[c] = out[c].astype("int64")
+    return out
 
 def create_dummy_simulator():
     """Create a dummy simulator function for RLSSM model."""
@@ -79,6 +112,7 @@ def build_model(dataset: pd.DataFrame):
             "state1",
             "state2",
             "response2",
+            "valid_upto",
         ],
         backend="jax",
     )
@@ -175,14 +209,15 @@ def main():
     dataset['state2']=dataset['state2'].astype('int64')
     dataset['participant_id']=dataset['participant_id'].astype('int64')
     
+    dataset = add_valid_upto_and_pad(dataset)
     
-    if "participant_id" in dataset.columns:
-        full_ids = (
-            dataset.groupby("participant_id")
-            .size()
-            .pipe(lambda s: s[s == dataset.groupby("participant_id").size().max()].index)
-        )
-        dataset = dataset.loc[dataset["participant_id"].isin(full_ids)].reset_index(drop=True)
+    # if "participant_id" in dataset.columns:
+    #     full_ids = (
+    #         dataset.groupby("participant_id")
+    #         .size()
+    #         .pipe(lambda s: s[s == dataset.groupby("participant_id").size().max()].index)
+    #     )
+    #     dataset = dataset.loc[dataset["participant_id"].isin(full_ids)].reset_index(drop=True)
 
     model = build_model(dataset)
 

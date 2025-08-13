@@ -18,11 +18,12 @@ conda activate hssm
 # This next line just runs the python script
 
 # python3 running_hddm_cv.py ${1} $SLURM_ARRAY_TASK_ID ${2} -1 0
-python3 hssm-tst.py \
+python3 -u hssm-tst.py \
   --ssc ${1} \
   --chain-id $SLURM_ARRAY_TASK_ID \
   --draws 10000 \
   --tune 2000 \
+  > output_model_${1}_chain_${SLURM_ARRAY_TASK_ID}.txt
   # --sampler nuts_numpyro \
   # --outdir chains
 
