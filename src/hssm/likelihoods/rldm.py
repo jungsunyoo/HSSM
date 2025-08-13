@@ -55,9 +55,9 @@ rlssm_model_config_list = {
                         This model is meant to serve as a tutorial for showing how to  \
                          implement a custom RLSSM model in HSSM.",
         "n_params": 7,
-        "n_extra_fields": 7,
-        "list_params": ['rl.alpha', 'scaler', 'a', 'Z', 't', 'theta', 'w', "valid_upto"],
-        "extra_fields": ["participant_id", "trial_id", "feedback", "state1", "state2", "response2"],
+        "n_extra_fields": 8,
+        "list_params": ['rl.alpha', 'scaler', 'a', 'Z', 't', 'theta', 'w'],
+        "extra_fields": ["participant_id", "trial_id", "feedback", "state1", "state2", "response2", "valid_upto", "n_states"],
         "decision_model": "LAN",
         "LAN": "angle",
     },    
@@ -320,7 +320,8 @@ def rlssm2_tst_1step_logp_inner_func(
     state1, 
     state2, 
     response2, 
-    valid_upto
+    valid_upto, 
+    n_states
 ):
     """Compute the log likelihood for a given subject using the RLDM model."""
     rt = data[:, 0]
@@ -365,10 +366,15 @@ def rlssm2_tst_1step_logp_inner_func(
     # the angle model (v, a, z, t, theta)
     # The number of rows is equal to the number of trials for the subject
     # q_val = jnp.ones(2) * 0.5
+    # Q-values: first stage (2 actions), second stage (2 states x 2 actions)
+    # n = jnp.unique(state2)
+    # n = (jnp.max(subj_state2.astype(jnp.int32)) + 1).astype(jnp.int32)
+
     
-     # Q-values: first stage (2 actions), second stage (2 states x 2 actions)
-    q_val_stage1 = jnp.ones(2) * 0.5
-    q_val_stage2 = jnp.ones((2, 2)) * 0.5  # shape: [n_states, n_actions]   
+    # nstates = n * (n - 1) // 2  # n = 2, so nstates = 1
+    # q_val_stage1 = jnp.ones(2) * 0.5
+    q_val_stage1 = jnp.ones(((n_states * (n_states-1)//2),2), dtype=jnp.float32) * 0.5
+    q_val_stage2 = jnp.ones((n_states, 2), dtype=jnp.float32) * 0.5  # shape: [n_states, n_actions]
     
     LAN_matrix_init = jnp.zeros((ntrials_subj, 7))
     # LAN_matrix_init = jnp.zeros((ntrials_subj, 10))  # v1, v2, a, z, t, theta, rt, action1, action2, state2
@@ -389,14 +395,15 @@ def rlssm2_tst_1step_logp_inner_func(
             trans_mat[0, 0] * q2[0, :].max() + trans_mat[0, 1] * q2[1, :].max(),
             trans_mat[1, 0] * q2[0, :].max() + trans_mat[1, 1] * q2[1, :].max(),
         ])
-        net_q = subj_w[t] * q_mb + (1.0 - subj_w[t]) * q1
+        q1_ = q1[s1_t, :].max(axis=0)  # shape (2,)
+        net_q = subj_w[t] * q_mb + (1.0 - subj_w[t]) * q1_
         v1 = (net_q[1] - net_q[0]) * subj_scaler[t]
 
         delta2 = r_t - q2[s2_t, a2_t]
         q2 = q2.at[s2_t, a2_t].add(subj_rl_alpha[t] * delta2)
 
-        delta1 = q2[s2_t, a2_t] - q1[a1_t]
-        q1 = q1.at[a1_t].add(subj_rl_alpha[t] * delta1)
+        delta1 = q2[s2_t, a2_t] - q1[s1_t, a1_t]
+        q1 = q1.at[s1_t, a1_t].add(subj_rl_alpha[t] * delta1)
 
         row = jnp.array([v1, subj_a[t], subj_z[t], subj_t[t], subj_theta[t], rt_t, a1_t])
         LAN = LAN.at[t, :].set(row)
@@ -437,7 +444,8 @@ def rlssm2_tst_1step_logp_inner_func(
     LL = LL * valid_mask
     return LL.ravel()
     # return jnp.sum(LL)
-
+    
+    
 # import jax
 # import jax.numpy as jnp
 # from jax.lax import dynamic_slice_in_dim, scan
@@ -851,7 +859,7 @@ def vec_logp(*args):
 #         logp_nojit=logp,
 #         n_params=n_params,
 #     )
-def make_logp_func(n_participants: int, n_trials: int) -> Callable:
+def make_logp_func(n_participants: int, n_trials: int, n_states: int) -> Callable:
     """Create a log likelihood function for the RLDM model.
 
     Parameters
@@ -918,13 +926,14 @@ def make_logp_func(n_participants: int, n_trials: int) -> Callable:
             state1,
             state2,
             response2,
-            valid_upto
+            valid_upto, 
+            n_states
         )
 
     return logp
 
 
-def make_rldm_logp_op(n_participants: int, n_trials: int, n_params: int) -> Callable:
+def make_rldm_logp_op(n_participants: int, n_trials: int, n_params: int, n_states: int) -> Callable:
 # def make_rldm_logp_op(n_participants: int, n_trials_per_sub: list, n_params: int, max_trials: int) -> Callable:
     """Create a pytensor Op for the likelihood function of RLDM model.
 
@@ -940,7 +949,7 @@ def make_rldm_logp_op(n_participants: int, n_trials: int, n_params: int) -> Call
     callable
         A function that computes the log likelihood for the RLDM model.
     """
-    logp = make_logp_func(n_participants, n_trials)
+    logp = make_logp_func(n_participants, n_trials, n_states)
     # logp = make_logp_func(n_participants, jnp.array(n_trials_per_sub), max_trials)
     vjp_logp = make_vjp_func(logp, params_only=False, n_params=n_params)
 

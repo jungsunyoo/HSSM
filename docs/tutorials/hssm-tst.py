@@ -76,12 +76,16 @@ def build_model(dataset: pd.DataFrame):
     trials_per_participant = dataset.groupby("participant_id").size().tolist()
     n_participants = len(trials_per_participant)
     n_trials = max(trials_per_participant)
-
+    
+    # Determine stage-2 state count ONCE (static) and pass it to the op
+    n_states = int(dataset["state2"].max()) + 1
+    
     # Log-likelihood op (JAX-backed)
     logp_jax_op = make_rldm_logp_op(
         n_participants=n_participants,
         n_trials=n_trials,
         n_params=7,  # ['rl.alpha', 'scaler', 'a', 'z', 't', 'theta', 'w']
+        n_states=n_states,
     )
 
     # RandomVariable via dummy simulator (for posterior predictive compatibility)
