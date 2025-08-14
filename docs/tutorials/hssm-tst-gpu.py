@@ -212,15 +212,15 @@ def main():
 
     dataset = pd.read_csv(csvfile, index_col=0)
 
-    dataset["rt"] = dataset["rt"].astype(np.float64)
-    dataset["response"] = dataset["response"].astype(np.int64)
+
 
     dataset.rename(columns={'subj_idx': 'participant_id'}, inplace=True)
     dataset.rename(columns={'trial': 'trial_id'}, inplace=True)
     dataset.rename(columns={'response1': 'response'}, inplace=True)
     dataset.rename(columns={'rt1': 'rt'}, inplace=True)
 
-
+    dataset["rt"] = dataset["rt"].astype(np.float64)
+    dataset["response"] = dataset["response"].astype(np.int64)
 
     dataset['state1']=dataset['state1'].astype('int64')
     dataset['state2']=dataset['state2'].astype('int64')
