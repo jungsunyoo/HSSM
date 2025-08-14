@@ -1,5 +1,8 @@
-import argparse
+
 import os
+os.environ["JAX_PLATFORM_NAME"] = "gpu"  # set before importing jax
+os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+import argparse
 import numpy as np
 import pandas as pd
 import arviz as az
@@ -13,7 +16,7 @@ from hssm.likelihoods.rldm import make_rldm_logp_op
 import jax
 from jax.experimental import compilation_cache
 compilation_cache.compilation_cache.set_cache_dir("/tmp/jax_cache")
-os.environ["JAX_PLATFORM_NAME"] = "gpu"
+# os.environ["JAX_PLATFORM_NAME"] = "gpu"
 jax.config.update("jax_enable_x64", True)  # try False for speed if stable
 
 
@@ -233,7 +236,7 @@ def main():
     model = build_model(dataset)
 
     idata = model.sample(
-        sampler="numpyro",
+        sampler=args.sampler,
         chains=4,                    # try 2–4
         chain_method="vectorized",   # best on single GPU
         draws=args.draws,
