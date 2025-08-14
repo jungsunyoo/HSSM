@@ -196,7 +196,7 @@ def main():
     parser.add_argument("--chain-id", type=int, required=True, help="Chain index (0-based or 1-based).")
     # parser.add_argument("--seed", type=int, required=True, help="Random seed for this chain.")
     parser.add_argument("--draws", type=int, default=5000)
-    parser.add_argument("--tune", type=int, default=600)
+    parser.add_argument("--tune", type=int, default=2000)
     parser.add_argument("--sampler", type=str, default="nuts_numpyro")
     parser.add_argument("--outdir", type=str, default="chains")
     args = parser.parse_args()
@@ -240,7 +240,7 @@ def main():
 
     idata = model.sample(
         sampler=args.sampler,
-        chains=4,                    # try 2–4
+        chains=1,                    # try 2–4
         # chain_method="vectorized",   # best on single GPU
         draws=args.draws,
         tune=args.tune,              # don’t overshoot
