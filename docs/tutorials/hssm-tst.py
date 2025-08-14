@@ -1,3 +1,7 @@
+import pytensor
+pytensor.config.mode = "FAST_COMPILE"
+pytensor.config.cxx = ""  # disables C++ compilation
+
 import argparse
 import os
 import numpy as np
