@@ -199,8 +199,8 @@ def main():
     # parser.add_argument("--seed", type=int, required=True, help="Random seed for this chain.")
     parser.add_argument("--draws", type=int, default=5000)
     parser.add_argument("--tune", type=int, default=500)
-    # parser.add_argument("--sampler", type=str, default="nuts_numpyro")
-    parser.add_argument("--sampler", type=str, default="blackjax_nuts")
+    parser.add_argument("--sampler", type=str, default="nuts_numpyro")
+    # parser.add_argument("--sampler", type=str, default="blackjax_nuts")
     parser.add_argument("--outdir", type=str, default="chains")
     args = parser.parse_args()
 
