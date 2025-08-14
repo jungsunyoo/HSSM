@@ -211,7 +211,10 @@ def main():
         raise FileNotFoundError(f"CSV not found: ssc {args.ssc}")
 
     dataset = pd.read_csv(csvfile, index_col=0)
-    
+
+    dataset["rt"] = dataset["rt"].astype(np.float64)
+    dataset["response"] = dataset["response"].astype(np.int64)
+
     dataset.rename(columns={'subj_idx': 'participant_id'}, inplace=True)
     dataset.rename(columns={'trial': 'trial_id'}, inplace=True)
     dataset.rename(columns={'response1': 'response'}, inplace=True)
@@ -238,11 +241,12 @@ def main():
     idata = model.sample(
         sampler=args.sampler,
         chains=4,                    # try 2–4
-        chain_method="vectorized",   # best on single GPU
+        # chain_method="vectorized",   # best on single GPU
         draws=args.draws,
         tune=args.tune,              # don’t overshoot
         target_accept=0.85,          # faster if still stable
         random_seed=seed,
+        inference_kwargs={"chain_method": "vectorized"},
     )
     # Re-label chain coordinate explicitly (optional consistency)
     for group in ["posterior", "sample_stats", "log_likelihood"]:
