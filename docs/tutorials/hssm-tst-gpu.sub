@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=hssmtst      ## Name of the job.
-#SBATCH -A bornstea_lab     ## account to charge
+#SBATCH -A bornstea_lab_gpu     ## account to charge
 #SBATCH -p standard          ## partition/queue name
 #SBATCH --time=335:00:00
 #SBATCH -N 1
