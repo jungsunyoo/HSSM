@@ -1,11 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=hssmtst      ## Name of the job.
+#SBATCH --job-name=hssm-gpu      ## Name of the job.
 #SBATCH -A bornstea_lab_gpu     ## account to charge
-#SBATCH -p standard          ## partition/queue name
+#SBATCH -p gpu          ## partition/queue name
 #SBATCH --time=335:00:00
-#SBATCH -N 1
-#SBATCH -c 4
-#SBATCH --mem=8G
+#SBATCH -nodes=1
+#SBATCH --gres=gpu:1                # request 1 gpu
+#SBATCH --tasks-per-node=1          # request 1 task per node
+#SBATCH --cpus-per-task=1           # request 1 cpu per task
+#SBATCH --mem=16gb                  # request 16Gb of memory
 #SBATCH --array=0-3
 #SBATCH --mail-type=end               ## send email when the job ends
 #SBATCH --mail-user=jungsuy@uci.edu  ## use this email address

@@ -53,6 +53,8 @@ def add_valid_upto_and_pad(df: pd.DataFrame) -> pd.DataFrame:
     for c in ["participant_id", "trial_id", "response", "response2", "state1", "state2", "valid_upto"]:
         if c in out.columns:
             out[c] = out[c].astype("int64")
+        else:
+            out[c] = out[c].astype("float64")  # ensure all are float64
     return out
 
 def create_dummy_simulator():
@@ -196,8 +198,9 @@ def main():
     parser.add_argument("--chain-id", type=int, required=True, help="Chain index (0-based or 1-based).")
     # parser.add_argument("--seed", type=int, required=True, help="Random seed for this chain.")
     parser.add_argument("--draws", type=int, default=5000)
-    parser.add_argument("--tune", type=int, default=2000)
-    parser.add_argument("--sampler", type=str, default="nuts_numpyro")
+    parser.add_argument("--tune", type=int, default=500)
+    # parser.add_argument("--sampler", type=str, default="nuts_numpyro")
+    parser.add_argument("--sampler", type=str, default="blackjax_nuts")
     parser.add_argument("--outdir", type=str, default="chains")
     args = parser.parse_args()
 
@@ -219,8 +222,8 @@ def main():
     dataset.rename(columns={'response1': 'response'}, inplace=True)
     dataset.rename(columns={'rt1': 'rt'}, inplace=True)
 
-    dataset["rt"] = dataset["rt"].astype(np.float64)
-    dataset["response"] = dataset["response"].astype(np.int64)
+    dataset["rt"] = dataset["rt"].astype('float64')
+    dataset["response"] = dataset["response"].astype('int64')
 
     dataset['state1']=dataset['state1'].astype('int64')
     dataset['state2']=dataset['state2'].astype('int64')
