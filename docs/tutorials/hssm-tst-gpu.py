@@ -195,8 +195,8 @@ def main():
     parser.add_argument("--ssc", type=int, required=True, help="MTST condition.")
     parser.add_argument("--chain-id", type=int, required=True, help="Chain index (0-based or 1-based).")
     # parser.add_argument("--seed", type=int, required=True, help="Random seed for this chain.")
-    parser.add_argument("--draws", type=int, default=10000)
-    parser.add_argument("--tune", type=int, default=2000)
+    parser.add_argument("--draws", type=int, default=5000)
+    parser.add_argument("--tune", type=int, default=600)
     parser.add_argument("--sampler", type=str, default="nuts_numpyro")
     parser.add_argument("--outdir", type=str, default="chains")
     args = parser.parse_args()
@@ -246,7 +246,14 @@ def main():
         tune=args.tune,              # don’t overshoot
         target_accept=0.85,          # faster if still stable
         random_seed=seed,
-        inference_kwargs={"chain_method": "vectorized"},
+        
+        inference_kwargs={
+            "chain_method": "vectorized",
+            "dense_mass": False,              # stay diagonal (much cheaper per step)
+            "max_treedepth": 12,              # optional: cap runaway trees
+            # you can also pass nuts_kwargs here in some versions:
+            # "nuts_kwargs": {"dense_mass": False, "max_tree_depth": 12}
+        },
     )
     # Re-label chain coordinate explicitly (optional consistency)
     for group in ["posterior", "sample_stats", "log_likelihood"]:
