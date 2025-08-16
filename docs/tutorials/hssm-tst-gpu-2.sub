@@ -37,7 +37,8 @@ SSC=${1}
 #   # Fallback: eval the hook directly
 #   eval "$(/opt/apps/miniconda3/24.9.2/bin/conda shell.bash hook)"
 # fi
-conda init
+# conda init
+source ~/.bashrc
 # module load miniconda3
 conda activate /data/homezvol1/jungsuy/conda-envs/hssm-gpu
 
