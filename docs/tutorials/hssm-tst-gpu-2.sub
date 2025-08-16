@@ -4,21 +4,20 @@
 #SBATCH -p gpu
 #SBATCH --gres=gpu:V100:1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=64G
-#SBATCH --time=5-00:00:00
-#SBATCH --array=0-11
+#SBATCH --mem-per-cpu=16G   # 4 * 16G = 64G
+#SBATCH --time=4-00:00:00
+#SBATCH --array=0-2
 #SBATCH --mail-type=end
 #SBATCH --mail-user=jungsuy@uci.edu
-#SBATCH -o /data/homezvol1/jungsuy/logs/hssm_%A_%a.out
-#SBATCH -e /data/homezvol1/jungsuy/logs/hssm_%A_%a.err
 set -euo pipefail
 
 # ---- map array index -> (SSC, CHAIN)
-SSC_LIST=(2 3 4 5)            # values you wanted
-NCHAINS=3                     # chains per SSC
-IDX="${SLURM_ARRAY_TASK_ID}"
-SSC="${SSC_LIST[$(( IDX / NCHAINS ))]}"
-CHAIN_ID="$(( IDX % NCHAINS ))"
+# SSC_LIST=(2 3 4 5)            # values you wanted
+# NCHAINS=3                     # chains per SSC
+CHAIN_ID="${SLURM_ARRAY_TASK_ID}"
+# SSC = "${1}"
+# SSC="${SSC_LIST[$(( IDX / NCHAINS ))]}"
+# CHAIN_ID="$(( IDX % NCHAINS ))"
 
 
 # Map the current array task to a concrete Slurm job id (handles arrays)
@@ -43,8 +42,8 @@ export PYTHONNOUSERSITE=1
 export JAX_ENABLE_X64=1
 export XLA_PYTHON_CLIENT_MEM_FRACTION=.90
 
-echo "Job ${SLURM_JOB_ID}.${SLURM_ARRAY_TASK_ID} on $(hostname) @ $(date)"
-echo "Mapping: IDX=${IDX} -> SSC=${SSC}, CHAIN=${CHAIN_ID}"
+# echo "Job ${SLURM_JOB_ID}.${SLURM_ARRAY_TASK_ID} on $(hostname) @ $(date)"
+# echo "Mapping: IDX=${IDX} -> SSC=${SSC}, CHAIN=${CHAIN_ID}"
 nvidia-smi || true
 "$PY" - <<'PY'
 from jax.extend import backend as be
@@ -55,17 +54,17 @@ except Exception as e: print("Platform: <unavailable>", e)
 PY
 
 # ---- outputs (unique per SSC/chain)
-OUTDIR="/data/homezvol1/jungsuy/hssm_runs/${SLURM_JOB_ID}/ssc_${SSC}"
-mkdir -p "$OUTDIR"
-OUTFILE="${OUTDIR}/chain_${CHAIN_ID}.nc"
+# OUTDIR="${SLURM_JOB_ID}/ssc_${SSC}"
+# mkdir -p "$OUTDIR"
+# OUTFILE="${OUTDIR}/chain_${CHAIN_ID}.nc"
 
 # ---- run
 srun -u "$PY" /pub/jungsuy/HSSM/docs/tutorials/hssm-tst-gpu.py \
-  --ssc "${SSC}" \
+  --ssc ${1} \
   --chain-id "${CHAIN_ID}" \
   --draws 100 \
   --tune 100 \
   --out "${OUTFILE}"
 
-echo "Saved: ${OUTFILE}"
+# echo "Saved: ${OUTFILE}"
 echo "Done @ $(date)"
