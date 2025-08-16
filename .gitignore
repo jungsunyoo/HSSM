@@ -82,3 +82,5 @@ explorations/
 *.nbconvert.ipynb
 pypi-token
 pre-commit
+*.out
+*.err
