@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:V100:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
-#SBATCH --time=14-00:00:00
+#SBATCH --time=5-00:00:00
 #SBATCH --array=0-11
 #SBATCH --mail-type=end
 #SBATCH --mail-user=jungsuy@uci.edu
@@ -29,7 +29,7 @@ else
 fi
 
 # Put SSC+chain in the JobName (what %j shows) and in Comment (what %k shows)
-scontrol update JobId="$JOBID_TGT" JobName="hssm_s${SSC}_c${CHAIN_ID}"
+scontrol update JobId="$JOBID_TGT" JobName="s${SSC}_c${CHAIN_ID}"
 scontrol update JobId="$JOBID_TGT" Comment="ssc=${SSC} chain=${CHAIN_ID}"
 
 
