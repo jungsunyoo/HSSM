@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+#SBATCH -J hssm_gpu
+#SBATCH -A bornstea_lab_gpu
+#SBATCH -p gpu
+#SBATCH --gres=gpu:V100:1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=64G
+#SBATCH --time=14-00:00:00        # 14 days; adjust if your partition caps earlier
+#SBATCH --array=0-2              # run 3 chains as separate tasks
+#SBATCH --mail-type=end               ## send email when the job ends
+#SBATCH --mail-user=jungsuy@uci.edu  ## use this email address
+
+set -euo pipefail
+
+# ---- per-task variables
+CHAIN_ID="${SLURM_ARRAY_TASK_ID}"
+SSC=${1}
+# OUTROOT="/data/homezvol1/jungsuy/hssm_runs/${SLURM_JOB_ID}"
+# LOGDIR="/data/homezvol1/jungsuy/logs"
+# mkdir -p "$OUTROOT" "$LOGDIR"
+
+# ---- conda init (non-interactive shells)
+if ! command -v conda &>/dev/null; then
+  if [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
+    source "$HOME/miniconda3/etc/profile.d/conda.sh"
+  else
+    # fallback to site-wide conda init path; adjust if different on hpc3
+    source /opt/apps/miniconda3/24.9.2/etc/profile.d/conda.sh
+  fi
+fi
+conda activate /data/homezvol1/jungsuy/conda-envs/hssm-gpu
+
+# ---- safe env knobs
+unset XLA_FLAGS                 # avoid unrecognized-flags crash
+export PYTHONNOUSERSITE=1       # no ~/.local mixing
+export JAX_ENABLE_X64=1         # float64 for stability
+export XLA_PYTHON_CLIENT_MEM_FRACTION=.90
+
+# ---- helpful logging
+echo "Job ${SLURM_JOB_ID}.${SLURM_ARRAY_TASK_ID} starting on $(hostname) at $(date)"
+nvidia-smi || true
+python - <<'PY'
+from jax.extend import backend as be
+import jax
+print("JAX devices:", jax.devices(), "backend:", jax.default_backend())
+try:
+    print("Platform:", be.get_backend().platform_version)
+except Exception as e:
+    print("Platform: <unavailable>", e)
+PY
+
+# ---- run your script (use the env’s python)
+# Ensure your Python saves to a unique file per chain; see note below about --out
+# OUTFILE="${OUTROOT}/chain_${CHAIN_ID}.nc"
+
+
+# python3 running_hddm_cv.py ${1} $SLURM_ARRAY_TASK_ID ${2} -1 0
+python3 -u hssm-tst-gpu.py \
+  --ssc ${1} \
+  --chain-id $SLURM_ARRAY_TASK_ID \
+  --draws 100 \
+  --tune 100 \
+  # > output_model_${1}_chain_${SLURM_ARRAY_TASK_ID}.txt
+  # --sampler nuts_numpyro \
+  # --outdir chains
+
+exit
+
+echo "Job ${SLURM_JOB_ID}.${SLURM_ARRAY_TASK_ID} finished at $(date)"
