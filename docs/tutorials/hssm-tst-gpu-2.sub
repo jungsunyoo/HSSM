@@ -19,15 +19,25 @@ SSC=${1}
 # LOGDIR="/data/homezvol1/jungsuy/logs"
 # mkdir -p "$OUTROOT" "$LOGDIR"
 
-# ---- conda init (non-interactive shells)
-if ! command -v conda &>/dev/null; then
-  if [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
-    source "$HOME/miniconda3/etc/profile.d/conda.sh"
-  else
-    # fallback to site-wide conda init path; adjust if different on hpc3
-    source /opt/apps/miniconda3/24.9.2/etc/profile.d/conda.sh
-  fi
-fi
+# # ---- conda init (non-interactive shells)
+# if ! command -v conda &>/dev/null; then
+#   if [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
+#     source "$HOME/miniconda3/etc/profile.d/conda.sh"
+#   else
+#     # fallback to site-wide conda init path; adjust if different on hpc3
+#     source /opt/apps/miniconda3/24.9.2/etc/profile.d/conda.sh
+#   fi
+# fi
+
+# if [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
+#   source "$HOME/miniconda3/etc/profile.d/conda.sh"
+# elif [ -f "/opt/apps/miniconda3/24.9.2/etc/profile.d/conda.sh" ]; then
+#   source "/opt/apps/miniconda3/24.9.2/etc/profile.d/conda.sh"
+# else
+#   # Fallback: eval the hook directly
+#   eval "$(/opt/apps/miniconda3/24.9.2/bin/conda shell.bash hook)"
+# fi
+module load miniconda3
 conda activate /data/homezvol1/jungsuy/conda-envs/hssm-gpu
 
 # ---- safe env knobs
