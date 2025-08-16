@@ -64,7 +64,7 @@ srun -u "$PY" /pub/jungsuy/HSSM/docs/tutorials/hssm-tst-gpu.py \
   --chain-id "${CHAIN_ID}" \
   --draws 100 \
   --tune 100 \
-  --out "${OUTFILE}"
+  # --out "${OUTFILE}"
 
 # echo "Saved: ${OUTFILE}"
 echo "Done @ $(date)"
