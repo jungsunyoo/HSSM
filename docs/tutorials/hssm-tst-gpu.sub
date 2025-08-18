@@ -72,7 +72,7 @@ if [[ "${SLURM_PROCID:-0}" != "0" ]]; then exit 0; fi
 #   --sampler nuts_numpyro \
 #   --chains 1                 # ensure one chain per job
 #   # --out "${OUTFILE}"
-python3 -u hssm-tst.py \
+python3 -u hssm-tst-gpu.py \
   --ssc ${1} \
   --chain-id $SLURM_ARRAY_TASK_ID \
   --draws 5000 \
