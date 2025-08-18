@@ -247,7 +247,7 @@ def main():
         # chain_method="vectorized",   # best on single GPU
         draws=args.draws,
         tune=args.tune,              # don’t overshoot
-        target_accept=0.85,          # faster if still stable
+        target_accept=0.9,          # faster if still stable
         random_seed=seed,
         
         inference_kwargs={
