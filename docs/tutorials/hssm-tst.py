@@ -84,12 +84,14 @@ def build_model(dataset: pd.DataFrame):
     logp_jax_op = make_rldm_logp_op(
         n_participants=n_participants,
         n_trials=n_trials,
-        n_params=7,  # ['rl.alpha', 'scaler', 'a', 'z', 't', 'theta', 'w']
+        n_params=6,  # ['rl.alpha', 'scaler', 'a', 'z', 't', 'theta']
         n_states=n_states,
     )
 
     # RandomVariable via dummy simulator (for posterior predictive compatibility)
-    list_params = ["rl.alpha", "scaler", "a", "z", "t", "theta", "w"]
+    # list_params = ["rl.alpha", "scaler", "a", "z", "t", "theta", "w"]
+    list_params = ["rl.alpha", "scaler", "a", "z", "t", "theta"]
+
     decorated_simulator = create_dummy_simulator()
     CustomRV = make_hssm_rv(simulator_fun=decorated_simulator, list_params=list_params)
 
@@ -106,7 +108,7 @@ def build_model(dataset: pd.DataFrame):
             z=(0.1, 0.9),
             t=(0.1, 2.0),
             theta=(0.0, 1.2),
-            w=(0.1, 0.9),
+            # w=(0.1, 0.9),
         ),
         rv=CustomRV,
         extra_fields=[
@@ -166,11 +168,11 @@ def build_model(dataset: pd.DataFrame):
                 formula="theta ~ 1 + (1|participant_id)",
                 prior={"Intercept": hssm.Prior("TruncatedNormal", lower=0.0, upper=1.2, mu=0.3)},
             ),
-            hssm.Param(
-                "w",
-                formula="w ~ 1 + (1|participant_id)",
-                prior={"Intercept": hssm.Prior("TruncatedNormal", lower=0.1, upper=0.9, mu=0.2)},
-            ),
+            # hssm.Param(
+            #     "w",
+            #     formula="w ~ 1 + (1|participant_id)",
+            #     prior={"Intercept": hssm.Prior("TruncatedNormal", lower=0.1, upper=0.9, mu=0.2)},
+            # ),
         ],
     )
 
@@ -209,9 +211,9 @@ def main():
 
 
 
-    dataset['state1']=dataset['state1'].astype('int64')
-    dataset['state2']=dataset['state2'].astype('int64')
-    dataset['participant_id']=dataset['participant_id'].astype('int64')
+    dataset['state1']=dataset['state1'].astype('int32')
+    dataset['state2']=dataset['state2'].astype('int32')
+    dataset['participant_id']=dataset['participant_id'].astype('int32')
     
     dataset = add_valid_upto_and_pad(dataset)
     

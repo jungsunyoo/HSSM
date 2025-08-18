@@ -17,7 +17,7 @@ import jax
 from jax.experimental import compilation_cache
 compilation_cache.compilation_cache.set_cache_dir("/tmp/jax_cache")
 # os.environ["JAX_PLATFORM_NAME"] = "gpu"
-jax.config.update("jax_enable_x64", True)  # try False for speed if stable
+# jax.config.update("jax_enable_x64", True)  # try False for speed if stable
 
 
 
@@ -52,9 +52,9 @@ def add_valid_upto_and_pad(df: pd.DataFrame) -> pd.DataFrame:
     out = df.groupby("participant_id", group_keys=False).apply(pad_group).reset_index(drop=True)
     for c in ["participant_id", "trial_id", "response", "response2", "state1", "state2", "valid_upto"]:
         if c in out.columns:
-            out[c] = out[c].astype("int64")
+            out[c] = out[c].astype("int32")
         else:
-            out[c] = out[c].astype("float64")  # ensure all are float64
+            out[c] = out[c].astype("float32")  # ensure all are float32
     return out
 
 def create_dummy_simulator():
@@ -82,7 +82,7 @@ def build_model(dataset: pd.DataFrame):
     # Cast indices/labels to integer
     for col in ("participant_id", "state1", "state2"):
         if col in dataset.columns:
-            dataset[col] = dataset[col].astype("int64")
+            dataset[col] = dataset[col].astype("int32")
 
     # Infer participant counts and trials for logp op shape
     trials_per_participant = dataset.groupby("participant_id").size().tolist()
@@ -96,12 +96,12 @@ def build_model(dataset: pd.DataFrame):
     logp_jax_op = make_rldm_logp_op(
         n_participants=n_participants,
         n_trials=n_trials,
-        n_params=7,  # ['rl.alpha', 'scaler', 'a', 'z', 't', 'theta', 'w']
+        n_params=6,  # ['rl.alpha', 'scaler', 'a', 'z', 't', 'theta']
         n_states=n_states,
     )
 
     # RandomVariable via dummy simulator (for posterior predictive compatibility)
-    list_params = ["rl.alpha", "scaler", "a", "z", "t", "theta", "w"]
+    list_params = ["rl.alpha", "scaler", "a", "z", "t", "theta"]
     decorated_simulator = create_dummy_simulator()
     CustomRV = make_hssm_rv(simulator_fun=decorated_simulator, list_params=list_params)
 
@@ -178,11 +178,11 @@ def build_model(dataset: pd.DataFrame):
                 formula="theta ~ 1 + (1|participant_id)",
                 prior={"Intercept": hssm.Prior("TruncatedNormal", lower=0.0, upper=1.2, mu=0.3)},
             ),
-            hssm.Param(
-                "w",
-                formula="w ~ 1 + (1|participant_id)",
-                prior={"Intercept": hssm.Prior("TruncatedNormal", lower=0.1, upper=0.9, mu=0.2)},
-            ),
+            # hssm.Param(
+            #     "w",
+            #     formula="w ~ 1 + (1|participant_id)",
+            #     prior={"Intercept": hssm.Prior("TruncatedNormal", lower=0.1, upper=0.9, mu=0.2)},
+            # ),
         ],
     )
 
@@ -222,13 +222,13 @@ def main():
     dataset.rename(columns={'response1': 'response'}, inplace=True)
     dataset.rename(columns={'rt1': 'rt'}, inplace=True)
 
-    dataset["rt"] = dataset["rt"].astype('float64')
-    dataset["response"] = dataset["response"].astype('int64')
+    dataset["rt"] = dataset["rt"].astype('float32')
+    dataset["response"] = dataset["response"].astype('int32')
 
-    dataset['state1']=dataset['state1'].astype('int64')
-    dataset['state2']=dataset['state2'].astype('int64')
-    dataset['participant_id']=dataset['participant_id'].astype('int64')
-    
+    dataset['state1']=dataset['state1'].astype('int32')
+    dataset['state2']=dataset['state2'].astype('int32')
+    dataset['participant_id']=dataset['participant_id'].astype('int32')
+
     dataset = add_valid_upto_and_pad(dataset)
     
     # if "participant_id" in dataset.columns:

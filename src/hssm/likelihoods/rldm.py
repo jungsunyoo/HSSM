@@ -531,7 +531,7 @@ def rlssm2_tst_mb_1step_logp_inner_func(
     
     # nstates = n * (n - 1) // 2  # n = 2, so nstates = 1
     # q_val_stage1 = jnp.ones(2) * 0.5
-    q_val_stage1 = jnp.ones(((n_states * (n_states-1)//2),2), dtype=jnp.float32) * 0.5
+    # q_val_stage1 = jnp.ones(((n_states * (n_states-1)//2),2), dtype=jnp.float32) * 0.5
     q_val_stage2 = jnp.ones((n_states, 2), dtype=jnp.float32) * 0.5  # shape: [n_states, n_actions]
     
     LAN_matrix_init = jnp.zeros((ntrials_subj, 7))
@@ -543,7 +543,7 @@ def rlssm2_tst_mb_1step_logp_inner_func(
     
     # Per-trial update with skip for t >= valid_upto
     def _active_step(payload):
-        q1, q2, loglik, LAN, t, s1_t, a1_t, a2_t, s2_t, rt_t, r_t = payload
+        q2, loglik, LAN, t, s1_t, a1_t, a2_t, s2_t, rt_t, r_t = payload
         s1_t = jnp.asarray(s1_t, dtype=jnp.int32)
         a1_t = jnp.asarray(a1_t, dtype=jnp.int32)
         a2_t = jnp.asarray(a2_t, dtype=jnp.int32)
@@ -553,7 +553,7 @@ def rlssm2_tst_mb_1step_logp_inner_func(
             trans_mat[0, 0] * q2[0, :].max() + trans_mat[0, 1] * q2[1, :].max(),
             trans_mat[1, 0] * q2[0, :].max() + trans_mat[1, 1] * q2[1, :].max(),
         ])
-        q1_ = q1[s1_t, :].max(axis=0)  # shape (2,)
+        # q1_ = q1[s1_t, :].max(axis=0)  # shape (2,)
         net_q = q_mb
         # net_q = subj_w[t] * q_mb + (1.0 - subj_w[t]) * q1_
         v1 = (net_q[1] - net_q[0]) * subj_scaler[t]
@@ -1059,12 +1059,20 @@ def make_logp_func(n_participants: int, n_trials: int, n_states: int) -> Callabl
         
 
 
-
+        # Cast extra fields to float32 so VJP returns float zeros (not ints)
+        participant_id = jnp.asarray(participant_id, dtype=jnp.float32)
+        trial        = jnp.asarray(trial,        dtype=jnp.float32)
+        feedback     = jnp.asarray(feedback,     dtype=jnp.float32)
+        state1       = jnp.asarray(state1,       dtype=jnp.float32)
+        state2       = jnp.asarray(state2,       dtype=jnp.float32)
+        response2    = jnp.asarray(response2,    dtype=jnp.float32)
+        valid_upto   = jnp.asarray(valid_upto,   dtype=jnp.float32)
 
         subj = jnp.unique(participant_id, size=n_participants).astype(jnp.int32)
 
         # create parameter arrays to be passed to the likelihood function
-        rl_alpha, scaler, a, z, t, theta, w = dist_params[:num_params]
+        # rl_alpha, scaler, a, z, t, theta, w = dist_params[:num_params]
+        rl_alpha, scaler, a, z, t, theta = dist_params[:num_params]
 
         # pass the parameters and data to the likelihood function
         return vec_logp(
