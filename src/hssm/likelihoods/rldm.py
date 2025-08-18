@@ -60,7 +60,23 @@ rlssm_model_config_list = {
         "extra_fields": ["participant_id", "trial_id", "feedback", "state1", "state2", "response2", "valid_upto", "n_states"],
         "decision_model": "LAN",
         "LAN": "angle",
-    },    
+    },
+     "rlssm-tst-mb": {
+        "name": "rlssm-tst-mb",
+        "description": "TWO STAGE TASK. RLSSM model where the learning process is a simple \
+                        Rescorla-Wagner model in a 2-armed bandit task. \
+                        The decision process is a collapsing bound DDM (angle model). \
+                        Same as rlssm1, but with dual learning rates for positive and \
+                         negative prediction errors. \
+                        This model is meant to serve as a tutorial for showing how to  \
+                         implement a custom RLSSM model in HSSM.",
+        "n_params": 6,
+        "n_extra_fields": 8,
+        "list_params": ['rl.alpha', 'scaler', 'a', 'Z', 't', 'theta'],
+        "extra_fields": ["participant_id", "trial_id", "feedback", "state1", "state2", "response2", "valid_upto", "n_states"],
+        "decision_model": "LAN",
+        "LAN": "angle",
+    },           
     "rlwmssm_v2": {
         "name": "rlwmssm_v2",
         "description": "RLSSM model where the learning process is the RLWM model \
@@ -94,7 +110,7 @@ rlssm_model_config_list = {
     },
 }
 
-MODEL_NAME = "rlssm-tst"
+MODEL_NAME = "rlssm-tst-mb" # "rlssm-tst" # "rlssm2" # "rlssm1"
 MODEL_CONFIG = rlssm_model_config_list[MODEL_NAME]
 
 if not isinstance(MODEL_CONFIG["n_extra_fields"], int) or not isinstance(
@@ -445,7 +461,147 @@ def rlssm2_tst_1step_logp_inner_func(
     return LL.ravel()
     # return jnp.sum(LL)
     
+def rlssm2_tst_mb_1step_logp_inner_func(
+    subj,
+    ntrials_subj,
+    data,
+    rl_alpha,
+    # rl_alpha_neg,
+    scaler,
+    a,
+    z,
+    t,
+    theta,
+    # w,
+    trial,
+    feedback,
+    state1, 
+    state2, 
+    response2, 
+    valid_upto, 
+    n_states
+):
+    """Compute the log likelihood for a given subject using the RLDM model."""
+    rt = data[:, 0]
+    response  = data[:, 1]
     
+    # response2 = data[:, 2]  # New response2 column
+    # state1 = data[:, 3]  # New state1 column
+    # state2 = data[:, 4]  # New state2 column
+    
+    
+    
+
+    # subj = jnp.astype(subj, jnp.int32)
+    subj = jnp.asarray(subj, dtype=jnp.int32)
+
+    # Extracting the parameters and data for the specific subject
+    subj_rl_alpha = dynamic_slice(rl_alpha, [subj * ntrials_subj], [ntrials_subj])
+    # subj_rl_alpha_neg = dynamic_slice(
+    #     rl_alpha_neg, [subj * ntrials_subj], [ntrials_subj]
+    # )
+    subj_scaler = dynamic_slice(scaler, [subj * ntrials_subj], [ntrials_subj])
+    subj_a = dynamic_slice(a, [subj * ntrials_subj], [ntrials_subj])
+    subj_z = dynamic_slice(z, [subj * ntrials_subj], [ntrials_subj])
+    subj_t = dynamic_slice(t, [subj * ntrials_subj], [ntrials_subj])
+    subj_theta = dynamic_slice(theta, [subj * ntrials_subj], [ntrials_subj])
+    # subj_w = dynamic_slice(w, [subj * ntrials_subj], [ntrials_subj])
+    subj_trial = dynamic_slice(trial, [subj * ntrials_subj], [ntrials_subj])
+    subj_response = dynamic_slice(response, [subj * ntrials_subj], [ntrials_subj])
+    subj_rt = dynamic_slice(rt, [subj * ntrials_subj], [ntrials_subj])
+    subj_feedback = dynamic_slice(feedback, [subj * ntrials_subj], [ntrials_subj])
+    
+    subj_response2 = dynamic_slice(response2, [subj * ntrials_subj], [ntrials_subj])
+    subj_state1 = dynamic_slice(state1, [subj * ntrials_subj], [ntrials_subj])
+    subj_state2 = dynamic_slice(state2, [subj * ntrials_subj], [ntrials_subj])    
+ 
+     # valid_upto is constant per subject; take the first element of this block
+    subj_valid_upto = dynamic_slice(valid_upto, [subj * ntrials_subj], [1])[0].astype(jnp.int32)
+   
+
+    # Initialize the LAN matrix that will hold the trial-by-trial data
+    # The matrix will have 7 columns: data (choice, rt) and parameters of
+    # the angle model (v, a, z, t, theta)
+    # The number of rows is equal to the number of trials for the subject
+    # q_val = jnp.ones(2) * 0.5
+    # Q-values: first stage (2 actions), second stage (2 states x 2 actions)
+    # n = jnp.unique(state2)
+    # n = (jnp.max(subj_state2.astype(jnp.int32)) + 1).astype(jnp.int32)
+
+    
+    # nstates = n * (n - 1) // 2  # n = 2, so nstates = 1
+    # q_val_stage1 = jnp.ones(2) * 0.5
+    q_val_stage1 = jnp.ones(((n_states * (n_states-1)//2),2), dtype=jnp.float32) * 0.5
+    q_val_stage2 = jnp.ones((n_states, 2), dtype=jnp.float32) * 0.5  # shape: [n_states, n_actions]
+    
+    LAN_matrix_init = jnp.zeros((ntrials_subj, 7))
+    # LAN_matrix_init = jnp.zeros((ntrials_subj, 10))  # v1, v2, a, z, t, theta, rt, action1, action2, state2
+   
+    # Transition matrix: p(s2|a1)
+    # Standard Daw task: action 0 -> state 0 with 0.7, state 1 with 0.3; action 1 reversed
+    trans_mat = jnp.array([[0.7, 0.3], [0.3, 0.7]])  # shape (2, 2)
+    
+    # Per-trial update with skip for t >= valid_upto
+    def _active_step(payload):
+        q1, q2, loglik, LAN, t, s1_t, a1_t, a2_t, s2_t, rt_t, r_t = payload
+        s1_t = jnp.asarray(s1_t, dtype=jnp.int32)
+        a1_t = jnp.asarray(a1_t, dtype=jnp.int32)
+        a2_t = jnp.asarray(a2_t, dtype=jnp.int32)
+        s2_t = jnp.asarray(s2_t, dtype=jnp.int32)
+
+        q_mb = jnp.array([
+            trans_mat[0, 0] * q2[0, :].max() + trans_mat[0, 1] * q2[1, :].max(),
+            trans_mat[1, 0] * q2[0, :].max() + trans_mat[1, 1] * q2[1, :].max(),
+        ])
+        q1_ = q1[s1_t, :].max(axis=0)  # shape (2,)
+        net_q = q_mb
+        # net_q = subj_w[t] * q_mb + (1.0 - subj_w[t]) * q1_
+        v1 = (net_q[1] - net_q[0]) * subj_scaler[t]
+
+        delta2 = r_t - q2[s2_t, a2_t]
+        q2 = q2.at[s2_t, a2_t].add(subj_rl_alpha[t] * delta2)
+
+        # delta1 = q2[s2_t, a2_t] - q1[s1_t, a1_t]
+        # q1 = q1.at[s1_t, a1_t].add(subj_rl_alpha[t] * delta1)
+
+        row = jnp.array([v1, subj_a[t], subj_z[t], subj_t[t], subj_theta[t], rt_t, a1_t])
+        LAN = LAN.at[t, :].set(row)
+
+        return (q2, loglik, LAN, t + 1)
+
+    def _inactive_step(payload):
+        q2, loglik, LAN, t, *_ = payload
+        return (q2, loglik, LAN, t + 1)
+
+    def process_trial(carry, inputs):
+        q2, loglik, LAN, t = carry
+        s1_t, a1_t, a2_t, s2_t, rt_t, r_t = inputs
+        active = t < subj_valid_upto
+        payload = (q2, loglik, LAN, t, s1_t, a1_t, a2_t, s2_t, rt_t, r_t)
+        q2, loglik, LAN, t_next = jax.lax.cond(active, _active_step, _inactive_step, payload)
+        return (q2, loglik, LAN, t_next), None
+
+    trials = (
+        subj_state1,      # s1
+        subj_response,    # a1
+        subj_response2,   # a2
+        subj_state2,      # s2
+        subj_rt,
+        subj_feedback,
+    )
+
+    
+    (q_val_stage2, LL, LAN_matrix, _), _ = scan(
+        process_trial, (q_val_stage2, 0.0, LAN_matrix_init, 0), trials
+    )
+
+
+    # forward pass through the LAN to compute log likelihoods
+    LL = lan_logp_jax_func(LAN_matrix)
+    # Zero-out padded trials (indices >= valid_upto)
+    valid_mask = (jnp.arange(ntrials_subj) < subj_valid_upto).astype(LL.dtype)    
+    LL = LL * valid_mask
+    return LL.ravel()    
 # import jax
 # import jax.numpy as jnp
 # from jax.lax import dynamic_slice_in_dim, scan
@@ -732,7 +888,8 @@ def rlwmssm_v2_inner_func(
 
 rldm_logp_inner_func_vmapped = jax.vmap(
     # rlssm1_logp_inner_func,
-    rlssm2_tst_1step_logp_inner_func,
+    # rlssm2_tst_1step_logp_inner_func,
+    rlssm2_tst_mb_1step_logp_inner_func,
     in_axes=[0] + [None] * (total_params + 1),
 )
 
@@ -920,7 +1077,7 @@ def make_logp_func(n_participants: int, n_trials: int, n_states: int) -> Callabl
             z,
             t,
             theta,
-            w,
+            # w,
             trial,
             feedback,
             state1,
