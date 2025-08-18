@@ -1,5 +1,6 @@
 
 import os
+import warnings
 os.environ["JAX_PLATFORM_NAME"] = "gpu"  # set before importing jax
 os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 import argparse
@@ -19,6 +20,8 @@ compilation_cache.compilation_cache.set_cache_dir("/tmp/jax_cache")
 # os.environ["JAX_PLATFORM_NAME"] = "gpu"
 # jax.config.update("jax_enable_x64", True)  # try False for speed if stable
 
+# import warnings 
+# warnings.filterwarnings( "ignore", category=FutureWarning, message=".DataFrameGroupBy\.apply operated on the grouping columns." )
 
 
 # Add this helper where you prepare the dataset
@@ -36,25 +39,26 @@ def add_valid_upto_and_pad(df: pd.DataFrame) -> pd.DataFrame:
             start_trial = int(g["trial_id"].max()) + 1
             pad_len = max_len - n
             tail = pd.DataFrame({
-                "participant_id": pid,
-                "trial_id": np.arange(start_trial, start_trial + pad_len, dtype=int),
-                "response": 0,
-                "response2": 0,
-                "rt": 0.0,
-                "feedback": 0.0,
-                "state1": 0,
-                "state2": 0,
-                "valid_upto": n,
+                "participant_id": np.full(pad_len, pid, dtype=np.int32),
+                "trial_id": np.arange(start_trial, start_trial + pad_len, dtype=np.int32),
+                "response": np.zeros(pad_len, dtype=np.int32),
+                "response2": np.zeros(pad_len, dtype=np.int32),
+                "rt": np.zeros(pad_len, dtype=np.float32),
+                "feedback": np.zeros(pad_len, dtype=np.float32),
+                "state1": np.zeros(pad_len, dtype=np.int32),
+                "state2": np.zeros(pad_len, dtype=np.int32),
+                "valid_upto": np.full(pad_len, n, dtype=np.int32),
             })
             g = pd.concat([g, tail], ignore_index=True)
         return g
 
     out = df.groupby("participant_id", group_keys=False).apply(pad_group).reset_index(drop=True)
+
+    # Enforce dtypes after concat (pandas may upcast)
     for c in ["participant_id", "trial_id", "response", "response2", "state1", "state2", "valid_upto"]:
-        if c in out.columns:
-            out[c] = out[c].astype("int32")
-        else:
-            out[c] = out[c].astype("float32")  # ensure all are float32
+        out[c] = out[c].astype("int32")
+    for c in ["rt", "feedback"]:
+        out[c] = out[c].astype("float32")
     return out
 
 def create_dummy_simulator():
