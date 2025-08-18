@@ -206,6 +206,7 @@ def main():
     parser.add_argument("--sampler", type=str, default="nuts_numpyro")
     # parser.add_argument("--sampler", type=str, default="blackjax_nuts")
     parser.add_argument("--outdir", type=str, default="chains")
+    parser.add_argument("--chains", type=int, default=1)
     args = parser.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
@@ -251,7 +252,7 @@ def main():
 
     idata = model.sample(
         sampler=args.sampler,
-        chains=1,                    # try 2–4
+        chains=args.chains,                    # try 2–4
         # chain_method="vectorized",   # best on single GPU
         draws=args.draws,
         tune=args.tune,              # don’t overshoot
