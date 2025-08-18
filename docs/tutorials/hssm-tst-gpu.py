@@ -229,7 +229,7 @@ def main():
     dataset["rt"] = dataset["rt"].astype('float32')
     dataset["response"] = dataset["response"].astype('int32')   
     dataset["feedback"] = dataset["feedback"].astype('int32')
-    dataset["valid_upto"] = dataset["valid_upto"].astype('int32')
+    # dataset["valid_upto"] = dataset["valid_upto"].astype('int32')
     dataset["trial_id"] = dataset["trial_id"].astype('int32')
     dataset["state1"] = dataset["state1"].astype('int32')
     dataset["state2"] = dataset["state2"].astype('int32')
