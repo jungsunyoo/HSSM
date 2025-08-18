@@ -268,7 +268,7 @@ def main():
 
     outfile = os.path.join(
         args.outdir,
-        f"ssc{args.ssc}_idata_chain{args.chain_id}.nc"
+        f"model1_mb_ssc{args.ssc}_idata_chain{args.chain_id}.nc"
     )
     az.to_netcdf(idata, outfile)
     print(f"Saved ssc {args.ssc} chain {args.chain_id} to {outfile}")
