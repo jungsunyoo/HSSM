@@ -257,7 +257,7 @@ def main():
         tune=args.tune,              # don’t overshoot
         target_accept=0.9,          # faster if still stable
         random_seed=seed,
-        
+        cores=1,                # avoid forking extra writers to stdout
         inference_kwargs={
             "chain_method": "vectorized",
             "dense_mass": False,              # stay diagonal (much cheaper per step)

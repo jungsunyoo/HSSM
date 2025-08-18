@@ -4,67 +4,36 @@
 #SBATCH -p gpu
 #SBATCH --gres=gpu:V100:1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem-per-cpu=16G   # 4 * 16G = 64G
+#SBATCH --mem-per-cpu=16G
 #SBATCH --time=4-00:00:00
 #SBATCH --array=0-2
+#SBATCH -o logs/hssm_gpu_%A_%a.out   # unique stdout per array task
+#SBATCH -e logs/hssm_gpu_%A_%a.err   # unique stderr per array task
 #SBATCH --mail-type=end
 #SBATCH --mail-user=jungsuy@uci.edu
 set -euo pipefail
 
-# ---- map array index -> (SSC, CHAIN)
-# SSC_LIST=(2 3 4 5)            # values you wanted
-# NCHAINS=3                     # chains per SSC
 CHAIN_ID="${SLURM_ARRAY_TASK_ID}"
-# SSC = "${1}"
-# SSC="${SSC_LIST[$(( IDX / NCHAINS ))]}"
-# CHAIN_ID="$(( IDX % NCHAINS ))"
-
 SSC="${1}"
-# Map the current array task to a concrete Slurm job id (handles arrays)
-if [[ -n "${SLURM_ARRAY_TASK_ID:-}" ]]; then
-  JOBID_TGT="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
-else
-  JOBID_TGT="${SLURM_JOB_ID}"
-fi
 
-# Put SSC+chain in the JobName (what %j shows) and in Comment (what %k shows)
-scontrol update JobId="$JOBID_TGT" JobName="s${SSC}_c${CHAIN_ID}"
-scontrol update JobId="$JOBID_TGT" Comment="ssc=${SSC} chain=${CHAIN_ID}"
-
-
-
-# ---- use env's python directly (no conda init needed)
 PY="/data/homezvol1/jungsuy/conda-envs/hssm-gpu/bin/python"
 
-# ---- safe env
 unset XLA_FLAGS
 export PYTHONNOUSERSITE=1
-export JAX_ENABLE_X64=1
+export JAX_ENABLE_X64=0            # disable x64 to keep fp32 everywhere
 export XLA_PYTHON_CLIENT_MEM_FRACTION=.90
 
-# echo "Job ${SLURM_JOB_ID}.${SLURM_ARRAY_TASK_ID} on $(hostname) @ $(date)"
-# echo "Mapping: IDX=${IDX} -> SSC=${SSC}, CHAIN=${CHAIN_ID}"
 nvidia-smi || true
 "$PY" - <<'PY'
-from jax.extend import backend as be
 import jax
 print("JAX devices:", jax.devices(), "backend:", jax.default_backend())
-try: print("Platform:", be.get_backend().platform_version)
-except Exception as e: print("Platform: <unavailable>", e)
 PY
 
-# ---- outputs (unique per SSC/chain)
-# OUTDIR="${SLURM_JOB_ID}/ssc_${SSC}"
-# mkdir -p "$OUTDIR"
-# OUTFILE="${OUTDIR}/chain_${CHAIN_ID}.nc"
-
-# ---- run
 srun -u "$PY" /pub/jungsuy/HSSM/docs/tutorials/hssm-tst-gpu.py \
-  --ssc ${1} \
+  --ssc "${SSC}" \
   --chain-id "${CHAIN_ID}" \
   --draws 5000 \
   --tune 5000 \
-  # --out "${OUTFILE}"
-
-# echo "Saved: ${OUTFILE}"
+  --sampler nuts_numpyro \
+  --chains 1                 # ensure one chain per job
 echo "Done @ $(date)"
