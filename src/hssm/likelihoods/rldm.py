@@ -534,12 +534,12 @@ def rlssm2_tst_mb_1step_logp_inner_func(
     # q_val_stage1 = jnp.ones(((n_states * (n_states-1)//2),2), dtype=jnp.float32) * 0.5
     q_val_stage2 = jnp.ones((n_states, 2), dtype=jnp.float32) * 0.5  # shape: [n_states, n_actions]
     
-    LAN_matrix_init = jnp.zeros((ntrials_subj, 7))
+    LAN_matrix_init = jnp.zeros((ntrials_subj, 7), dtype=jnp.float32)
     # LAN_matrix_init = jnp.zeros((ntrials_subj, 10))  # v1, v2, a, z, t, theta, rt, action1, action2, state2
    
     # Transition matrix: p(s2|a1)
     # Standard Daw task: action 0 -> state 0 with 0.7, state 1 with 0.3; action 1 reversed
-    trans_mat = jnp.array([[0.7, 0.3], [0.3, 0.7]])  # shape (2, 2)
+    trans_mat = jnp.array([[0.7, 0.3], [0.3, 0.7]], dtype=jnp.float32)  # shape (2, 2)
     
     # Per-trial update with skip for t >= valid_upto
     def _active_step(payload):
@@ -564,7 +564,7 @@ def rlssm2_tst_mb_1step_logp_inner_func(
         # delta1 = q2[s2_t, a2_t] - q1[s1_t, a1_t]
         # q1 = q1.at[s1_t, a1_t].add(subj_rl_alpha[t] * delta1)
 
-        row = jnp.array([v1, subj_a[t], subj_z[t], subj_t[t], subj_theta[t], rt_t, a1_t])
+        row = jnp.array([v1, subj_a[t], subj_z[t], subj_t[t], subj_theta[t], rt_t, a1_t], dtype=jnp.float32)
         LAN = LAN.at[t, :].set(row)
 
         return (q2, loglik, LAN, t + 1)
@@ -1072,7 +1072,18 @@ def make_logp_func(n_participants: int, n_trials: int, n_states: int) -> Callabl
 
         # create parameter arrays to be passed to the likelihood function
         # rl_alpha, scaler, a, z, t, theta, w = dist_params[:num_params]
-        rl_alpha, scaler, a, z, t, theta = dist_params[:num_params]
+        # rl_alpha, scaler, a, z, t, theta = dist_params[:num_params]
+        
+        # Params: cast to float32 (PyMC provides float64 by default)
+        rl_alpha = jnp.asarray(dist_params[0], dtype=jnp.float32)
+        scaler   = jnp.asarray(dist_params[1], dtype=jnp.float32)
+        a        = jnp.asarray(dist_params[2], dtype=jnp.float32)
+        z        = jnp.asarray(dist_params[3], dtype=jnp.float32)
+        t        = jnp.asarray(dist_params[4], dtype=jnp.float32)
+        theta    = jnp.asarray(dist_params[5], dtype=jnp.float32)
+
+        # Data: ensure float32
+        data = jnp.asarray(data, dtype=jnp.float32)
 
         # pass the parameters and data to the likelihood function
         return vec_logp(
@@ -1116,7 +1127,9 @@ def make_rldm_logp_op(n_participants: int, n_trials: int, n_params: int, n_state
     """
     logp = make_logp_func(n_participants, n_trials, n_states)
     # logp = make_logp_func(n_participants, jnp.array(n_trials_per_sub), max_trials)
-    vjp_logp = make_vjp_func(logp, params_only=False, n_params=n_params)
+    # vjp_logp = make_vjp_func(logp, params_only=False, n_params=n_params)
+    # Gradients only wrt the first n_params (avoid extras)
+    vjp_logp = make_vjp_func(logp, params_only=True, n_params=n_params)
 
     return make_jax_logp_ops(
         logp=jax.jit(logp),
