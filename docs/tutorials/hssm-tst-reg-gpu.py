@@ -291,6 +291,8 @@ def main():
     # parser.add_argument("--sampler", type=str, default="blackjax_nuts")
     parser.add_argument("--outdir", type=str, default="chains")
     parser.add_argument("--chains", type=int, default=1)
+    parser.add_argument("--target_accept", type=float, default=0.9)
+    parser.add_argument("--max_treedepth", type=int, default=12, help="Maximum tree depth for NUTS sampler.")
     args = parser.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
@@ -346,13 +348,13 @@ def main():
         # chain_method="vectorized",   # best on single GPU
         draws=args.draws,
         tune=args.tune,              # don’t overshoot
-        target_accept=0.9,          # faster if still stable
+        target_accept=args.target_accept,          # faster if still stable
         random_seed=seed,
         cores=1,                # avoid forking extra writers to stdout
         inference_kwargs={
             "chain_method": "vectorized",
             "dense_mass": False,              # stay diagonal (much cheaper per step)
-            "max_treedepth": 12,              # optional: cap runaway trees
+            "max_treedepth": args.max_treedepth,              # optional: cap runaway trees
             # you can also pass nuts_kwargs here in some versions:
             # "nuts_kwargs": {"dense_mass": False, "max_tree_depth": 12}
         },
