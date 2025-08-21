@@ -45,7 +45,7 @@ if [[ "${SLURM_PROCID:-0}" != "0" ]]; then exit 0; fi
 
 # Single srun; inherit GPUs from the job allocation. Do NOT pass --gres here.
 srun --ntasks=1 --cpus-per-task="${SLURM_CPUS_PER_TASK:-1}" --label -u \
-  "$PY" hssm-tst-gpu.py \
+  "$PY" hssm-tst-reg-gpu.py \
     --ssc "${SSC}" \
     --chain-id "${CHAIN_ID}" \
     --draws 5000 \
