@@ -55,7 +55,7 @@ srun --ntasks=1 --cpus-per-task="${SLURM_CPUS_PER_TASK:-1}" --label -u \
     --sampler nuts_numpyro \
     --chains 1 \
     --target_accept 0.85 \
-    --max_treedepth 12 \  
+    --max_treedepth 12
 
 
 echo "Done @ $(date)"
