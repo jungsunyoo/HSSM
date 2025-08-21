@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH -J hssm_gpu
-#SBATCH -p gpu
+#SBATCH -p all
+#SBATCH --time=120
 #SBATCH -o slurm-%j.out
 #SBATCH --array=0-2
 #SBATCH --mail-type=end
