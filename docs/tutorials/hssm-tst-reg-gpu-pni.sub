@@ -21,7 +21,7 @@ if [[ -n "${SLURM_ARRAY_TASK_ID:-}" ]]; then
 else
   JOBID_TGT="${SLURM_JOB_ID}"
 fi
-scontrol update JobId="$JOBID_TGT" JobName="os${SSC}_c${CHAIN_ID}" || true
+scontrol update JobId="$JOBID_TGT" JobName="s${SSC}_c${CHAIN_ID}" || true
 scontrol update JobId="$JOBID_TGT" Comment="ssc=${SSC} chain=${CHAIN_ID}" || true
 
 # Use your conda env with pip-managed CUDA 12 JAX
@@ -47,7 +47,7 @@ if [[ "${SLURM_PROCID:-0}" != "0" ]]; then exit 0; fi
 
 # Single srun; inherit GPUs from the job allocation. Do NOT pass --gres here.
 srun --ntasks=1 --cpus-per-task="${SLURM_CPUS_PER_TASK:-1}" --label -u \
-  "$PY" hssm-tst-gpu.py \
+  "$PY" hssm-tst-reg-gpu.py \
     --ssc "${SSC}" \
     --chain-id "${CHAIN_ID}" \
     --draws 5000 \
