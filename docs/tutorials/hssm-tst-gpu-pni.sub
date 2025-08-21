@@ -43,8 +43,8 @@ PY
 # Only rank 0 runs payload (extra safety)
 if [[ "${SLURM_PROCID:-0}" != "0" ]]; then exit 0; fi
 
-# Single srun, use env’s Python so JAX sees pip CUDA libs
-srun --ntasks=1 --gres="${SLURM_GPUS_PER_TASK:-1}" --cpus-per-task="${SLURM_CPUS_PER_TASK:-1}" --label -u \
+# Single srun; inherit GPUs from the job allocation. Do NOT pass --gres here.
+srun --ntasks=1 --cpus-per-task="${SLURM_CPUS_PER_TASK:-1}" --label -u \
   "$PY" hssm-tst-gpu.py \
     --ssc "${SSC}" \
     --chain-id "${CHAIN_ID}" \
