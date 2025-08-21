@@ -5,6 +5,9 @@
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1            # or: --gres=gpu:L40S:1
 #SBATCH -o slurm-%A_%a.out      # unique per array task
+#SBATCH --cpus-per-task=24
+#SBATCH --mem=256000
+#SBATCH --time=5720
 #SBATCH --array=0-2
 #SBATCH --mail-type=end
 #SBATCH --mail-user=jungsuy@uci.edu
