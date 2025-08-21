@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 #SBATCH -J hssm_gpu
 #SBATCH -p all
-#SBATCH --time=120
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1            # or: --gres=gpu:L40S:1
 #SBATCH -o slurm-%A_%a.out      # unique per array task
