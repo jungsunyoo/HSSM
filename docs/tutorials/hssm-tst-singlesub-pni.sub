@@ -21,7 +21,7 @@ conda activate hssm
 # python3 running_hddm_cv.py ${1} $SLURM_ARRAY_TASK_ID ${2} -1 0
 python3 -u hssm-tst-singlesub.py \
   --ssc ${1} \
-  --subj ${2}
+  --subj ${2} \
   --chain-id $SLURM_ARRAY_TASK_ID \
   --draws 10000 \
   --tune 10000 \
