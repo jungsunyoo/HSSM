@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+#SBATCH -J hssm_gpu
+#SBATCH -p all
+#SBATCH --ntasks=1
+#SBATCH --gres=gpu:1            # or: --gres=gpu:L40S:1
+#SBATCH -o slurm-%A_%a.out      # unique per array task
+#SBATCH -c 2 # 2 CPUs per task
+#SBATCH --mem=24576 # 24GB
+#SBATCH --time=5760 # 4 days
+#SBATCH --array=0-2
+#SBATCH --mail-type=end
+#SBATCH --mail-user=jungsuy@uci.edu
+set -euo pipefail
+
+# ...existing code...
+CHAIN_ID="${SLURM_ARRAY_TASK_ID}"
+SSC="${1}"
+
+if [[ -n "${SLURM_ARRAY_TASK_ID:-}" ]]; then
+  JOBID_TGT="${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
+else
+  JOBID_TGT="${SLURM_JOB_ID}"
+fi
+scontrol update JobId="$JOBID_TGT" JobName="s${SSC}_c${CHAIN_ID}" || true
+scontrol update JobId="$JOBID_TGT" Comment="ssc=${SSC} chain=${CHAIN_ID}" || true
+
+# Use your conda env with pip-managed CUDA 12 JAX
+PY="/usr/people/jy4657/.conda/envs/hssm/bin/python"
+
+# Safe env (no cluster CUDA modules needed)
+unset XLA_FLAGS
+export PYTHONNOUSERSITE=1
+export PYTHONUNBUFFERED=1
+export JAX_ENABLE_X64=0
+export XLA_PYTHON_CLIENT_MEM_FRACTION=.90
+
+nvidia-smi || true
+"$PY" - <<'PY'
+import jax, sys, os
+print("which python:", sys.executable)
+print("CUDA_VISIBLE_DEVICES:", os.environ.get("CUDA_VISIBLE_DEVICES"))
+print("JAX devices:", jax.devices(), "backend:", jax.default_backend())
+PY
+
+# Only rank 0 runs payload (extra safety)
+if [[ "${SLURM_PROCID:-0}" != "0" ]]; then exit 0; fi
+
+# Single srun; inherit GPUs from the job allocation. Do NOT pass --gres here.
+srun --ntasks=1 --cpus-per-task="${SLURM_CPUS_PER_TASK:-1}" --label -u \
+  "$PY" hssm-tst-gpu.py \
+    --ssc "${SSC}" \
+    --chain-id "${CHAIN_ID}" \
+    --draws 4000 \
+    --tune 4000 \
+    --sampler nuts_numpyro \
+    --chains 1 \
+    --target_accept 0.85 \
+    --max_treedepth 12
+
+
+echo "Done @ $(date)"

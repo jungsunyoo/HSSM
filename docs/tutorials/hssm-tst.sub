@@ -13,7 +13,8 @@
 
 # module load python/3.11  # or your env activation
 # source ~/envs/hssm/bin/activate
-module load miniconda3
+# module load miniconda3
+source ~/.bashrc
 conda activate hssm
 
 # This next line just runs the python script

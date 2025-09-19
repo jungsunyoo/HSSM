@@ -1,5 +1,6 @@
 
 import os
+import warnings
 os.environ["JAX_PLATFORM_NAME"] = "gpu"  # set before importing jax
 os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 import argparse
@@ -17,8 +18,10 @@ import jax
 from jax.experimental import compilation_cache
 compilation_cache.compilation_cache.set_cache_dir("/tmp/jax_cache")
 # os.environ["JAX_PLATFORM_NAME"] = "gpu"
-jax.config.update("jax_enable_x64", True)  # try False for speed if stable
+# jax.config.update("jax_enable_x64", True)  # try False for speed if stable
 
+# import warnings 
+# warnings.filterwarnings( "ignore", category=FutureWarning, message=".DataFrameGroupBy\.apply operated on the grouping columns." )
 
 
 # Add this helper where you prepare the dataset
@@ -36,25 +39,26 @@ def add_valid_upto_and_pad(df: pd.DataFrame) -> pd.DataFrame:
             start_trial = int(g["trial_id"].max()) + 1
             pad_len = max_len - n
             tail = pd.DataFrame({
-                "participant_id": pid,
-                "trial_id": np.arange(start_trial, start_trial + pad_len, dtype=int),
-                "response": 0,
-                "response2": 0,
-                "rt": 0.0,
-                "feedback": 0.0,
-                "state1": 0,
-                "state2": 0,
-                "valid_upto": n,
+                "participant_id": np.full(pad_len, pid, dtype=np.int32),
+                "trial_id": np.arange(start_trial, start_trial + pad_len, dtype=np.int32),
+                "response": np.zeros(pad_len, dtype=np.int32),
+                "response2": np.zeros(pad_len, dtype=np.int32),
+                "rt": np.zeros(pad_len, dtype=np.float32),
+                "feedback": np.zeros(pad_len, dtype=np.float32),
+                "state1": np.zeros(pad_len, dtype=np.int32),
+                "state2": np.zeros(pad_len, dtype=np.int32),
+                "valid_upto": np.full(pad_len, n, dtype=np.int32),
             })
             g = pd.concat([g, tail], ignore_index=True)
         return g
 
     out = df.groupby("participant_id", group_keys=False).apply(pad_group).reset_index(drop=True)
+
+    # Enforce dtypes after concat (pandas may upcast)
     for c in ["participant_id", "trial_id", "response", "response2", "state1", "state2", "valid_upto"]:
-        if c in out.columns:
-            out[c] = out[c].astype("int64")
-        else:
-            out[c] = out[c].astype("float64")  # ensure all are float64
+        out[c] = out[c].astype("int32")
+    for c in ["rt", "feedback"]:
+        out[c] = out[c].astype("float32")
     return out
 
 def create_dummy_simulator():
@@ -82,7 +86,7 @@ def build_model(dataset: pd.DataFrame):
     # Cast indices/labels to integer
     for col in ("participant_id", "state1", "state2"):
         if col in dataset.columns:
-            dataset[col] = dataset[col].astype("int64")
+            dataset[col] = dataset[col].astype("int32")
 
     # Infer participant counts and trials for logp op shape
     trials_per_participant = dataset.groupby("participant_id").size().tolist()
@@ -96,12 +100,12 @@ def build_model(dataset: pd.DataFrame):
     logp_jax_op = make_rldm_logp_op(
         n_participants=n_participants,
         n_trials=n_trials,
-        n_params=7,  # ['rl.alpha', 'scaler', 'a', 'z', 't', 'theta', 'w']
+        n_params=6,  # ['rl.alpha', 'scaler', 'a', 'z', 't', 'theta']
         n_states=n_states,
     )
 
     # RandomVariable via dummy simulator (for posterior predictive compatibility)
-    list_params = ["rl.alpha", "scaler", "a", "z", "t", "theta", "w"]
+    list_params = ["rl.alpha", "scaler", "a", "z", "t", "theta"]
     decorated_simulator = create_dummy_simulator()
     CustomRV = make_hssm_rv(simulator_fun=decorated_simulator, list_params=list_params)
 
@@ -178,11 +182,11 @@ def build_model(dataset: pd.DataFrame):
                 formula="theta ~ 1 + (1|participant_id)",
                 prior={"Intercept": hssm.Prior("TruncatedNormal", lower=0.0, upper=1.2, mu=0.3)},
             ),
-            hssm.Param(
-                "w",
-                formula="w ~ 1 + (1|participant_id)",
-                prior={"Intercept": hssm.Prior("TruncatedNormal", lower=0.1, upper=0.9, mu=0.2)},
-            ),
+            # hssm.Param(
+            #     "w",
+            #     formula="w ~ 1 + (1|participant_id)",
+            #     prior={"Intercept": hssm.Prior("TruncatedNormal", lower=0.1, upper=0.9, mu=0.2)},
+            # ),
         ],
     )
 
@@ -202,6 +206,10 @@ def main():
     parser.add_argument("--sampler", type=str, default="nuts_numpyro")
     # parser.add_argument("--sampler", type=str, default="blackjax_nuts")
     parser.add_argument("--outdir", type=str, default="chains")
+    parser.add_argument("--chains", type=int, default=1)
+    parser.add_argument("--target_accept", type=float, default=0.9, help="Target acceptance rate for NUTS sampler.")
+    parser.add_argument("--max_treedepth", type=int, default=12, help="Maximum tree depth for NUTS sampler.")
+    
     args = parser.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
@@ -222,13 +230,17 @@ def main():
     dataset.rename(columns={'response1': 'response'}, inplace=True)
     dataset.rename(columns={'rt1': 'rt'}, inplace=True)
 
-    dataset["rt"] = dataset["rt"].astype('float64')
-    dataset["response"] = dataset["response"].astype('int64')
+    dataset["rt"] = dataset["rt"].astype('float32')
+    dataset["response"] = dataset["response"].astype('int32')   
+    dataset["feedback"] = dataset["feedback"].astype('int32')
+    # dataset["valid_upto"] = dataset["valid_upto"].astype('int32')
+    dataset["trial_id"] = dataset["trial_id"].astype('int32')
+    dataset["state1"] = dataset["state1"].astype('int32')
+    dataset["state2"] = dataset["state2"].astype('int32')
+    dataset["response2"] = dataset["response2"].astype('int32')
+    dataset["participant_id"] = dataset["participant_id"].astype('int32')
 
-    dataset['state1']=dataset['state1'].astype('int64')
-    dataset['state2']=dataset['state2'].astype('int64')
-    dataset['participant_id']=dataset['participant_id'].astype('int64')
-    
+
     dataset = add_valid_upto_and_pad(dataset)
     
     # if "participant_id" in dataset.columns:
@@ -243,17 +255,17 @@ def main():
 
     idata = model.sample(
         sampler=args.sampler,
-        chains=1,                    # try 2–4
+        chains=args.chains,                    # try 2–4
         # chain_method="vectorized",   # best on single GPU
         draws=args.draws,
         tune=args.tune,              # don’t overshoot
-        target_accept=0.85,          # faster if still stable
+        target_accept=args.target_accept,          # faster if still stable
         random_seed=seed,
-        
+        cores=1,                # avoid forking extra writers to stdout
         inference_kwargs={
             "chain_method": "vectorized",
             "dense_mass": False,              # stay diagonal (much cheaper per step)
-            "max_treedepth": 12,              # optional: cap runaway trees
+            "max_treedepth": args.max_treedepth,              # optional: cap runaway trees
             # you can also pass nuts_kwargs here in some versions:
             # "nuts_kwargs": {"dense_mass": False, "max_tree_depth": 12}
         },
@@ -268,7 +280,7 @@ def main():
 
     outfile = os.path.join(
         args.outdir,
-        f"ssc{args.ssc}_idata_chain{args.chain_id}.nc"
+        f"model1_mb_ssc{args.ssc}_idata_chain{args.chain_id}.nc"
     )
     az.to_netcdf(idata, outfile)
     print(f"Saved ssc {args.ssc} chain {args.chain_id} to {outfile}")
