@@ -129,14 +129,14 @@ def main():
         target_accept=args.target_accept,
         random_seed=seed,
         cores=1,                # avoid forking extra writers to stdout
-        # inference_kwargs={
-        #     "chain_method": "vectorized",
-        #     "dense_mass": False,
-        #     "nuts_kwargs": {"max_tree_depth": args.max_treedepth},  # ← correct for NumPyro
-        # }
         inference_kwargs={
-        "nuts": {"max_treedepth": args.max_treedepth},  # <-- PyMC key/name
-    },
+            "chain_method": "vectorized",
+            "dense_mass": False,
+            "nuts_kwargs": {"max_tree_depth": args.max_treedepth},  # ← correct for NumPyro
+        }
+        # inference_kwargs={
+        # "nuts": {"max_treedepth": args.max_treedepth},  # <-- PyMC key/name
+    # },
     )
 
     # If this invocation ran a single chain, stamp the chain coord with chain-id
