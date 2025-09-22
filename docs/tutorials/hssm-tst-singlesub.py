@@ -123,7 +123,7 @@ def main():
 
     idata = model.sample(
         # sampler=args.sampler,
-        sampler="nuts",  # <-- PyMC
+        sampler="mcmc",  # <-- PyMC
         chains=args.chains,
         draws=args.draws,
         tune=args.tune,
