@@ -23,8 +23,8 @@ python3 -u hssm-tst-singlesub.py \
   --chain-id $SLURM_ARRAY_TASK_ID \
   --draws 1000 \
   --tune 2000 \
-  --target_accept 0.9
-  --max_treedepth 12
+  --target_accept 0.9 \
+  --max_treedepth 5 \
   # > output_model_${1}_chain_${SLURM_ARRAY_TASK_ID}.txt
   # --sampler nuts_numpyro \
   # --outdir chains
