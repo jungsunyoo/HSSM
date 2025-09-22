@@ -122,7 +122,8 @@ def main():
     seed = (args.subj + 1000 * args.ssc) ^ (args.chain_id * 2654435761 % 2**32)
 
     idata = model.sample(
-        sampler=args.sampler,
+        # sampler=args.sampler,
+        sampler="nuts",  # <-- PyMC
         chains=args.chains,
         draws=args.draws,
         tune=args.tune,
@@ -130,10 +131,13 @@ def main():
         random_seed=seed,
         cores=1,                # avoid forking extra writers to stdout
         inference_kwargs={
-            "chain_method": "vectorized",
-            "dense_mass": False,
-            "nuts_kwargs": {"max_tree_depth": args.max_treedepth},  # ← correct for NumPyro
-        }
+        "nuts": {"max_treedepth": args.max_treedepth},  # <-- PyMC
+    },
+        # inference_kwargs={
+        #     "chain_method": "vectorized",
+        #     "dense_mass": False,
+        #     "nuts_kwargs": {"max_tree_depth": args.max_treedepth},  # ← correct for NumPyro
+        # }
         # inference_kwargs={
         # "nuts": {"max_treedepth": args.max_treedepth},  # <-- PyMC key/name
     # },
