@@ -131,11 +131,9 @@ def main():
         cores=1,                # avoid forking extra writers to stdout
         inference_kwargs={
             "chain_method": "vectorized",
-            "dense_mass": False,              # stay diagonal (much cheaper per step)
-            "max_treedepth": args.max_treedepth,              # optional: cap runaway trees
-            # you can also pass nuts_kwargs here in some versions:
-            # "nuts_kwargs": {"dense_mass": False, "max_tree_depth": 12}
-        },
+            "dense_mass": False,
+            "nuts_kwargs": {"max_tree_depth": args.max_treedepth},  # ← correct for NumPyro
+        }
     )
 
     # If this invocation ran a single chain, stamp the chain coord with chain-id
