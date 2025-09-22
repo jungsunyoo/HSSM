@@ -108,6 +108,9 @@ def main():
     ap.add_argument("--tune", type=int, default=1000)
     ap.add_argument("--sampler", type=str, default="nuts_numpyro")
     ap.add_argument("--outdir", type=str, default="out")
+    ap.add_argument("--target_accept", type=float, default=0.9, help="Target acceptance rate for NUTS sampler.")
+    ap.add_argument("--max_treedepth", type=int, default=12, help="Maximum tree depth for NUTS sampler.")
+
     args = ap.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
@@ -123,14 +126,16 @@ def main():
         chains=args.chains,
         draws=args.draws,
         tune=args.tune,
-        target_accept=0.9,
+        target_accept=args.target_accept,
         random_seed=seed,
-        cores=1,
-        # inference_kwargs={
-        #     "chain_method": "vectorized",
-        #     "dense_mass": False,
-        #     "max_treedepth": 12,
-        # },
+        cores=1,                # avoid forking extra writers to stdout
+        inference_kwargs={
+            "chain_method": "vectorized",
+            "dense_mass": False,              # stay diagonal (much cheaper per step)
+            "max_treedepth": args.max_treedepth,              # optional: cap runaway trees
+            # you can also pass nuts_kwargs here in some versions:
+            # "nuts_kwargs": {"dense_mass": False, "max_tree_depth": 12}
+        },
     )
 
     # If this invocation ran a single chain, stamp the chain coord with chain-id
