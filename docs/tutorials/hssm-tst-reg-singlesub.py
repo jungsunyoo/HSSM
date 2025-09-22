@@ -16,11 +16,11 @@ from ssms.basic_simulators.simulator import simulator
 from hssm.likelihoods.rldm import make_rldm_logp_op
 
 # (optional) tiny JAX cache on CPU
-try:
-    from jax.experimental import compilation_cache
-    compilation_cache.compilation_cache.set_cache_dir("/tmp/jax_cache")
-except Exception:
-    pass
+# try:
+#     from jax.experimental import compilation_cache
+#     compilation_cache.compilation_cache.set_cache_dir("/tmp/jax_cache")
+# except Exception:
+#     pass
 
 def add_ushared_udiff(dataset, subj_col="participant_id", alpha0=1.0, beta0=1.0):
     df = dataset.copy()

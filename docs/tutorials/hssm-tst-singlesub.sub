@@ -19,10 +19,12 @@ conda activate hssm
 # python3 running_hddm_cv.py ${1} $SLURM_ARRAY_TASK_ID ${2} -1 0
 python3 -u hssm-tst-singlesub.py \
   --ssc ${1} \
-  --subj ${2}
+  --subj ${2} \
   --chain-id $SLURM_ARRAY_TASK_ID \
-  --draws 10000 \
-  --tune 10000 \
+  --draws 1000 \
+  --tune 2000 \
+  --target_accept 0.9
+  --max_treedepth 12
   # > output_model_${1}_chain_${SLURM_ARRAY_TASK_ID}.txt
   # --sampler nuts_numpyro \
   # --outdir chains
