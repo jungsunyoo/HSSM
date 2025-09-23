@@ -9,12 +9,23 @@
 #SBATCH --mail-type=end
 #SBATCH --mail-user=jungsuy@uci.edu
 
-set -euo pipefail
+# enable -e and pipefail now; delay -u until after sourcing bashrc
+set -e -o pipefail
 
-source ~/.bashrc
+# Safely source ~/.bashrc even if /etc/bashrc expects unset vars
+if [ -f ~/.bashrc ]; then
+  set +u
+  source ~/.bashrc
+  set -u
+else
+  # If you rely on conda but don't have ~/.bashrc, you can instead do:
+  # eval "$(/path/to/miniconda3/bin/conda shell.bash hook)"
+  :
+fi
+
 conda activate hssm
 
-# JAX side must match PyMC (float64; CPU to avoid CUDA probe noise)
+# JAX side must match PyMC (CPU + float64); keep if you're using the PyMC backend
 export JAX_PLATFORM_NAME=cpu
 export JAX_ENABLE_X64=true
 
@@ -26,7 +37,7 @@ python3 -u hssm-tst-singlesub.py \
   --ssc "${SSC}" \
   --subj "${SUBJ}" \
   --chain-id "${CHAIN_ID}" \
-  --tune 200 \
-  --draws 100 \
+  --tune 2000 \
+  --draws 1000 \
   --target_accept 0.90 \
-  --max_treedepth 5    # <-- try 5 ONCE to prove it's applied; change to 12 later
+  --max_treedepth 12
