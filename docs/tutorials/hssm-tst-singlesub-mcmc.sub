@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+#SBATCH -J hssm-tst-singlesub          # job name
+#SBATCH -p all                         # partition
+#SBATCH --ntasks=1
+#SBATCH -c 1
+#SBATCH --array=0-2                    # chains as array tasks
+#SBATCH --time=1440                    # minutes (24h)
+#SBATCH -o slurm-%A_%a.out
+#SBATCH --mail-type=end
+#SBATCH --mail-user=jungsuy@uci.edu
+
+set -euo pipefail
+
+# Activate your env
+source ~/.bashrc
+conda activate hssm
+
+# Ensure JAX matches PyMC (CPU + float64)
+export JAX_PLATFORM_NAME=cpu
+export JAX_ENABLE_X64=true
+
+# Positional args from sbatch
+SSC="${1}"       # number of states (e.g., 2/3/4/5)
+SUBJ="${2}"      # participant id
+CHAIN_ID="${SLURM_ARRAY_TASK_ID}"
+
+# Run (PyMC backend)
+python3 -u hssm-tst-singlesub-mcmc.py \
+  --ssc "${SSC}" \
+  --subj "${SUBJ}" \
+  --chain-id "${CHAIN_ID}" \
+  --tune 2000 \
+  --draws 1000 \
+  --target_accept 0.90 \
+  --max_treedepth 12
