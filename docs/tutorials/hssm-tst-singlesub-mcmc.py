@@ -1,14 +1,15 @@
 #!/usr/bin/env python
 # Single-subject HSSM (non-hierarchical) using PyMC NUTS.
-# Fixes:
-#   - Forces PyMC backend (sampler="mcmc")
-#   - Passes max treedepth via PyMC's "nuts" kwarg
-#   - Aligns JAX (used by HSSM likelihood) to float64 to match PyMC
-#   - Disables JAX GPU probing unless you explicitly set it
+# Key fixes:
+#  - Force PyMC backend (sampler="mcmc")
+#  - Pass max treedepth via PyMC's key
+#  - ALSO pass via nuts_kwargs to cover Bambi/HSSM version differences
+#  - Align JAX (used in HSSM likelihood) to float64 to match PyMC
+#  - Print post-fit diagnostics proving which backend ran and what treedepth cap was used
 
 import os
-# IMPORTANT: set JAX runtime BEFORE importing anything that might touch JAX (incl. hssm)
-os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")   # stay on CPU; avoid CUDA probing
+# Make sure these are set BEFORE importing anything that touches JAX (incl. hssm)
+os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")   # stay on CPU; avoid CUDA probing noise
 os.environ.setdefault("JAX_ENABLE_X64", "true")     # JAX float64 to match PyMC
 
 import argparse
@@ -94,7 +95,7 @@ def build_nonhier_model(sdf: pd.DataFrame):
         ),
         rv=CustomRV,
         extra_fields=["participant_id", "trial_id", "feedback", "state1", "state2", "response2", "valid_upto"],
-        backend="jax",  # JAX is used inside the likelihood op; sampler itself is PyMC
+        backend="jax",  # JAX computation inside the likelihood; sampling via PyMC
     )
 
     # Non-hierarchical: no random effects
@@ -152,23 +153,26 @@ def main():
     # distinct seed per subject × state × chain
     seed = (args.subj + 1000 * args.ssc) ^ (args.chain_id * 2654435761 % 2**32)
 
-    # --------- PyMC backend (this honors max_treedepth) ----------
+    # --------- PyMC backend (Bambi/HSSM pass-through) ----------
+    # Cover both Bambi API spellings across versions:
+    nuts_kwargs = {"max_treedepth": args.max_treedepth, "dense_mass": bool(args.dense_mass)}
+    inference_kwargs = {
+        "step": "nuts",                  # hint some versions to choose NUTS
+        "nuts": nuts_kwargs,             # PyMC key (common)
+        "nuts_kwargs": nuts_kwargs,      # alt spelling in some versions
+    }
+
     idata = model.sample(
-        sampler="mcmc",                      # <- PyMC path (not "nuts", not "nuts_numpyro")
+        sampler="mcmc",                  # PyMC path (NOT "nuts", NOT "nuts_numpyro")
         chains=args.chains,
         draws=args.draws,
         tune=args.tune,
-        target_accept=args.target_accept,    # PyMC honors this
+        target_accept=args.target_accept,
         random_seed=seed,
         cores=1,
-        inference_kwargs={
-            "nuts": {
-                "max_treedepth": args.max_treedepth,     # <- PyMC key/name
-                "dense_mass": bool(args.dense_mass),
-            },
-        },
+        inference_kwargs=inference_kwargs,
     )
-    # -------------------------------------------------------------
+    # -----------------------------------------------------------
 
     # If this invocation ran a single chain, stamp the chain coord with chain-id
     for grp in ["posterior", "sample_stats", "log_likelihood"]:
@@ -187,12 +191,17 @@ def main():
     summ = az.summary(idata, var_names=["rl.alpha","scaler","a","z","t","theta","w"], hdi_prob=0.95)
     summ.to_csv(os.path.join(subdir, f"summary_ssc{args.ssc}_s{args.subj:04d}_chain{args.chain_id}.csv"))
 
-    # Helpful debug: prove treedepth cap landed
+    # ---- Self-checks to PROVE what's running ----
     try:
-        max_depth_seen = int(idata.sample_stats.tree_depth.max())
-        print(f"Max tree depth seen in this run: {max_depth_seen}")
-    except Exception:
-        pass
+        backend = idata.attrs.get("inference_library", "unknown")
+        max_attr = idata.sample_stats.tree_depth.attrs.get("max_tree_depth", None)
+        max_seen = int(idata.sample_stats.tree_depth.max())
+        print(f"[diag] inference_library   : {backend}")
+        print(f"[diag] requested cap       : {args.max_treedepth}")
+        print(f"[diag] attr max_tree_depth : {max_attr}")
+        print(f"[diag] max tree depth seen : {max_seen}")
+    except Exception as e:
+        print(f"[diag] Could not print treedepth diagnostics: {e}")
 
     print(f"Saved subject {args.subj} (ssc={args.ssc}) chain {args.chain_id} → {subdir}")
     print(f"InferenceData: {nc_path}")
