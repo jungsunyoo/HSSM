@@ -9,28 +9,18 @@
 #SBATCH --mail-type=end
 #SBATCH --mail-user=jungsuy@uci.edu
 
-# keep strict, but delay nounset until conda is ready
-set -e -o pipefail
+set -e -o pipefail   # no -u (nounset)!
 
-# --- load conda safely (no nounset during hook) ---
-set +u
+# Load conda safely (site path may differ on your cluster)
 if command -v conda >/dev/null 2>&1; then
   eval "$(conda shell.bash hook)"
 else
-  # fallback: source site-wide conda if needed (adjust if your path differs)
   source /mnt/cup/PNI-facilities/Computing/sw/pkg/Rhel9/ANACONDAPY/2024.02/etc/profile.d/conda.sh
 fi
-set -u
 
 conda activate hssm
 
-# ensure deactivation runs without nounset issues at job end
-trap 'set +u; conda deactivate >/dev/null 2>&1 || true' EXIT
-
-# now you can safely turn nounset on for the rest of the script
-set -u
-
-# your env vars
+# (Optional) align JAX to CPU/float64 if you’re on the PyMC path
 export JAX_PLATFORM_NAME=cpu
 export JAX_ENABLE_X64=true
 
@@ -38,10 +28,10 @@ SSC="$1"
 SUBJ="$2"
 CHAIN_ID="${SLURM_ARRAY_TASK_ID}"
 
-python3 -u hssm-tst-singlesub-mcmc.py \
-  --ssc "${SSC}" \
-  --subj "${SUBJ}" \
-  --chain-id "${CHAIN_ID}" \
+python3 -u hssm-tst-singlesub.py \
+  --ssc "$SSC" \
+  --subj "$SUBJ" \
+  --chain-id "$CHAIN_ID" \
   --tune 200 \
   --draws 100 \
   --target_accept 0.90 \
