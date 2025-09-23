@@ -14,6 +14,11 @@
 source ~/.bashrc
 conda activate hssm
 
+
+export JAX_PLATFORM_NAME=cpu
+# optional: if you want float64 in JAX too
+export JAX_ENABLE_X64=true
+
 # This next line just runs the python script
 
 # python3 running_hddm_cv.py ${1} $SLURM_ARRAY_TASK_ID ${2} -1 0

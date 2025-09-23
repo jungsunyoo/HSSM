@@ -123,21 +123,21 @@ def main():
 
     idata = model.sample(
         # sampler=args.sampler,
-        sampler="mcmc",  # <-- PyMC
+        sampler="nuts_numpyro",  # <-- PyMC
         chains=args.chains,
         draws=args.draws,
         tune=args.tune,
         target_accept=args.target_accept,
         random_seed=seed,
         cores=1,                # avoid forking extra writers to stdout
+    #     inference_kwargs={
+    #     "nuts": {"max_treedepth": args.max_treedepth},  # <-- PyMC
+    # },
         inference_kwargs={
-        "nuts": {"max_treedepth": args.max_treedepth},  # <-- PyMC
-    },
-        # inference_kwargs={
-        #     "chain_method": "vectorized",
-        #     "dense_mass": False,
-        #     "nuts_kwargs": {"max_tree_depth": args.max_treedepth},  # ← correct for NumPyro
-        # }
+            "chain_method": "vectorized",
+            "dense_mass": False,
+            "nuts_kwargs": {"max_tree_depth": args.max_treedepth},  # ← correct for NumPyro
+        }
         # inference_kwargs={
         # "nuts": {"max_treedepth": args.max_treedepth},  # <-- PyMC key/name
     # },
